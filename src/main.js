@@ -260,6 +260,88 @@ const glassMaterial = new THREE.MeshPhysicalMaterial({
   normalScale: new THREE.Vector2(0.028, 0.028),
 });
 
+const deformation = {
+  velocity: { value: new THREE.Vector2() },
+  acceleration: { value: new THREE.Vector2() },
+  speed: { value: 0 },
+  wobble: { value: 0 },
+  time: { value: 0 },
+};
+
+glassMaterial.onBeforeCompile = (shader) => {
+  shader.uniforms.uDeformVelocity = deformation.velocity;
+  shader.uniforms.uDeformAcceleration = deformation.acceleration;
+  shader.uniforms.uDeformSpeed = deformation.speed;
+  shader.uniforms.uDeformWobble = deformation.wobble;
+  shader.uniforms.uDeformTime = deformation.time;
+
+  const deformationHeader = /* glsl */ `
+    uniform vec2 uDeformVelocity;
+    uniform vec2 uDeformAcceleration;
+    uniform float uDeformSpeed;
+    uniform float uDeformWobble;
+    uniform float uDeformTime;
+
+    vec3 movementDirection() {
+      return normalize(vec3(uDeformVelocity.xy, 0.0001));
+    }
+
+    float surfaceWave(vec3 p) {
+      vec3 n = normalize(p);
+      float longitude = atan(n.y, n.x);
+      float latitude = acos(clamp(n.z, -1.0, 1.0));
+      float primary = sin(longitude * 3.0 + latitude * 2.0 - uDeformTime * 7.2);
+      float secondary = sin(longitude * 5.0 - latitude * 3.0 + uDeformTime * 5.1);
+      float directional = dot(n.xy, normalize(uDeformAcceleration + vec2(0.0001)));
+      return primary * 0.62 + secondary * 0.28 + directional * 0.30;
+    }
+  `;
+
+  shader.vertexShader = deformationHeader + shader.vertexShader;
+  shader.vertexShader = shader.vertexShader.replace(
+    "#include <beginnormal_vertex>",
+    /* glsl */ `
+      vec3 objectNormal = vec3(normal);
+      vec3 moveDirNormal = movementDirection();
+      float normalAlongMotion = dot(objectNormal, moveDirNormal);
+      objectNormal = normalize(
+        objectNormal - moveDirNormal * normalAlongMotion * uDeformSpeed * 0.26
+      );
+      vec3 waveTangent = normalize(cross(objectNormal, vec3(0.0, 0.0, 1.0)) + vec3(0.0001));
+      objectNormal = normalize(
+        objectNormal + waveTangent * surfaceWave(position) * uDeformWobble * 0.13
+      );
+    `,
+  );
+  shader.vertexShader = shader.vertexShader.replace(
+    "#include <begin_vertex>",
+    /* glsl */ `
+      vec3 transformed = vec3(position);
+      vec3 unitPosition = normalize(position);
+      vec3 moveDir = movementDirection();
+
+      float alongMotion = dot(transformed, moveDir);
+      vec3 acrossMotion = transformed - moveDir * alongMotion;
+
+      // Speed stretches the volume along travel while compressing both
+      // perpendicular axes to approximately preserve its volume.
+      transformed += moveDir * alongMotion * uDeformSpeed * 0.40;
+      transformed -= acrossMotion * uDeformSpeed * 0.125;
+
+      // Acceleration makes the leading and trailing sides respond differently.
+      vec3 accelerationDir = normalize(vec3(uDeformAcceleration, 0.0001));
+      float accelerationFacing = dot(unitPosition, accelerationDir);
+      transformed += accelerationDir
+        * (1.0 - accelerationFacing * accelerationFacing)
+        * length(uDeformAcceleration) * 0.095;
+
+      // Movement energy excites damped spherical wave modes in the mesh itself.
+      transformed += unitPosition * surfaceWave(position) * uDeformWobble * 0.105;
+    `,
+  );
+};
+glassMaterial.customProgramCacheKey = () => "directional-liquid-deformation-v1";
+
 const glassOrb = new THREE.Mesh(
   new THREE.SphereGeometry(1, 128, 96),
   glassMaterial,
@@ -386,7 +468,12 @@ const lens = {
   position: new THREE.Vector2(innerWidth * 0.5, innerHeight * 0.5),
   previous: new THREE.Vector2(innerWidth * 0.5, innerHeight * 0.5),
   motion: new THREE.Vector2(),
+  motionTarget: new THREE.Vector2(),
+  acceleration: new THREE.Vector2(),
   roll: 0,
+  wobbleEnergy: 0,
+  lastMoveAt: performance.now(),
+  lastFrameAt: performance.now(),
   radius: 80,
   radiusVelocity: 0,
   held: false,
@@ -418,15 +505,29 @@ addEventListener("resize", resize);
 resize();
 
 function moveLens(event) {
+  const now = performance.now();
+  const elapsed = Math.max((now - lens.lastMoveAt) / 1000, 1 / 240);
   lens.previous.copy(lens.position);
   lens.position.set(event.clientX, event.clientY);
   const movement = lens.position.clone().sub(lens.previous);
   if (movement.lengthSq() > 0) {
+    const measuredVelocity = movement
+      .clone()
+      .set(movement.x, -movement.y)
+      .multiplyScalar(1 / elapsed / 1800)
+      .clampLength(0, 1);
+    const velocityChange = measuredVelocity.clone().sub(lens.motionTarget);
+    lens.acceleration.lerp(velocityChange, 0.62).clampLength(0, 1);
+    lens.motionTarget.lerp(measuredVelocity, 0.72);
     lens.roll += (movement.x - movement.y) / Math.max(expandedRadius, 1) * 0.85;
-    lens.motion.set(movement.x, -movement.y).multiplyScalar(0.055).clampLength(0, 1);
+    lens.wobbleEnergy = Math.min(
+      1,
+      lens.wobbleEnergy + movement.length() / 360 + velocityChange.length() * 0.16,
+    );
     glassOrb.rotation.y += movement.x / Math.max(lens.radius, 1);
     glassOrb.rotation.x += movement.y / Math.max(lens.radius, 1);
   }
+  lens.lastMoveAt = now;
 }
 
 addEventListener("pointermove", moveLens, { passive: true });
@@ -455,12 +556,19 @@ addEventListener(
 );
 
 function render() {
-  const expanded = lens.held || performance.now() < lens.pressedUntil;
+  const now = performance.now();
+  const deltaSeconds = Math.min((now - lens.lastFrameAt) / 1000, 0.05);
+  lens.lastFrameAt = now;
+  const expanded = lens.held || now < lens.pressedUntil;
   const radiusTarget = expanded ? expandedRadius : restingRadius;
   const radiusForce = (radiusTarget - lens.radius) * 0.12;
   lens.radiusVelocity = (lens.radiusVelocity + radiusForce) * 0.72;
   lens.radius += lens.radiusVelocity;
-  lens.motion.multiplyScalar(0.91);
+  const motionFollow = 1 - Math.exp(-deltaSeconds * 14);
+  lens.motion.lerp(lens.motionTarget, motionFollow);
+  lens.motionTarget.multiplyScalar(Math.exp(-deltaSeconds * 3.8));
+  lens.acceleration.multiplyScalar(Math.exp(-deltaSeconds * 3.4));
+  lens.wobbleEnergy *= Math.exp(-deltaSeconds * 1.15);
 
   const aspect = innerWidth / innerHeight;
   glassOrb.position.x = (lens.position.x / innerWidth * 2 - 1) * aspect;
@@ -469,6 +577,11 @@ function render() {
   glassOrb.scale.setScalar(worldRadius);
   liquidNormalMap.offset.x += 0.00018;
   liquidNormalMap.offset.y -= 0.00011;
+  deformation.velocity.value.copy(lens.motion);
+  deformation.acceleration.value.copy(lens.acceleration);
+  deformation.speed.value = THREE.MathUtils.clamp(lens.motion.length(), 0, 1);
+  deformation.wobble.value = lens.wobbleEnergy;
+  deformation.time.value = now * 0.001;
 
   renderer.render(scene, camera);
   requestAnimationFrame(render);

@@ -22,5 +22,7 @@ Create a production build with `npm run build`.
 The bubble is a tessellated 3D sphere rendered with physically based
 transmission, thickness, IOR, spectral dispersion, clearcoat, attenuation,
 environment reflections, and a page-centered point light. A flowing normal map
-rotates with pointer movement, while pressing smoothly expands the geometry and
+rotates with pointer movement. Pointer speed, direction, and acceleration
+deform the sphere's vertices and optical normals, exciting damped surface-wave
+modes after movement stops. Pressing smoothly expands the geometry and
 releasing contracts it. Built with Vite, Three.js, and Canvas 2D.
