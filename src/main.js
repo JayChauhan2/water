@@ -241,7 +241,7 @@ function createLiquidNormalMap() {
 
 const liquidNormalMap = createLiquidNormalMap();
 const glassMaterial = new THREE.MeshPhysicalMaterial({
-  color: 0xffffff,
+  color: 0xdcf6ff,
   transmission: 1,
   opacity: 1,
   roughness: 0,
@@ -251,11 +251,11 @@ const glassMaterial = new THREE.MeshPhysicalMaterial({
   dispersion: 0.09,
   clearcoat: 1,
   clearcoatRoughness: 0.015,
-  specularIntensity: 0.92,
-  specularColor: 0xffffff,
-  attenuationColor: 0xf2fffc,
-  attenuationDistance: 18,
-  envMapIntensity: 0.78,
+  specularIntensity: 1,
+  specularColor: 0xf8feff,
+  attenuationColor: 0x59cfe9,
+  attenuationDistance: 3.2,
+  envMapIntensity: 0.34,
   normalMap: liquidNormalMap,
   normalScale: new THREE.Vector2(0.028, 0.028),
 });
