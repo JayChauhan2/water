@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import "./styles.css";
 
 await document.fonts.ready;
@@ -14,9 +15,12 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setClearColor(0xffffff, 1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
 
 const scene = new THREE.Scene();
-const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
+camera.position.z = 5;
 const artCanvas = document.createElement("canvas");
 const artContext = artCanvas.getContext("2d");
 const artTexture = new THREE.CanvasTexture(artCanvas);
@@ -200,7 +204,77 @@ const material = new THREE.ShaderMaterial({
   `,
 });
 
-scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
+const backdrop = new THREE.Mesh(
+  new THREE.PlaneGeometry(2, 2),
+  new THREE.MeshBasicMaterial({ map: artTexture, toneMapped: false }),
+);
+backdrop.position.z = -1.4;
+scene.add(backdrop);
+
+function createLiquidNormalMap() {
+  const size = 256;
+  const data = new Uint8Array(size * size * 4);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const waveX =
+        Math.sin(x * 0.09 + Math.sin(y * 0.035) * 2.2) * 0.32 +
+        Math.sin((x + y) * 0.043) * 0.18;
+      const waveY =
+        Math.cos(y * 0.08 + Math.sin(x * 0.04) * 2.0) * 0.30 +
+        Math.cos((x - y) * 0.047) * 0.16;
+      const index = (y * size + x) * 4;
+      data[index] = 128 + waveX * 70;
+      data[index + 1] = 128 + waveY * 70;
+      data[index + 2] = 245;
+      data[index + 3] = 255;
+    }
+  }
+
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.NoColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+const liquidNormalMap = createLiquidNormalMap();
+const glassMaterial = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff,
+  transmission: 1,
+  opacity: 1,
+  roughness: 0,
+  metalness: 0,
+  ior: 1.46,
+  thickness: 0.82,
+  dispersion: 0.09,
+  clearcoat: 1,
+  clearcoatRoughness: 0.015,
+  specularIntensity: 0.92,
+  specularColor: 0xffffff,
+  attenuationColor: 0xf2fffc,
+  attenuationDistance: 18,
+  envMapIntensity: 0.78,
+  normalMap: liquidNormalMap,
+  normalScale: new THREE.Vector2(0.028, 0.028),
+});
+
+const glassOrb = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 128, 96),
+  glassMaterial,
+);
+glassOrb.position.z = 0;
+scene.add(glassOrb);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+const environment = pmrem.fromScene(new RoomEnvironment(), 0.035).texture;
+scene.environment = environment;
+pmrem.dispose();
+
+const centerLight = new THREE.PointLight(0xffffff, 30, 20, 1.8);
+centerLight.position.set(0, 0, 3.2);
+scene.add(centerLight);
 
 const palette = {
   ink: "#111111",
@@ -325,6 +399,13 @@ let expandedRadius = 130;
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.getDrawingBufferSize(uniforms.uResolution.value);
+  const aspect = innerWidth / innerHeight;
+  camera.left = -aspect;
+  camera.right = aspect;
+  camera.top = 1;
+  camera.bottom = -1;
+  camera.updateProjectionMatrix();
+  backdrop.scale.set(aspect, 1, 1);
   artCanvas.width = uniforms.uResolution.value.x;
   artCanvas.height = uniforms.uResolution.value.y;
   restingRadius = THREE.MathUtils.clamp(Math.min(innerWidth, innerHeight) * 0.085, 58, 92);
@@ -343,6 +424,8 @@ function moveLens(event) {
   if (movement.lengthSq() > 0) {
     lens.roll += (movement.x - movement.y) / Math.max(expandedRadius, 1) * 0.85;
     lens.motion.set(movement.x, -movement.y).multiplyScalar(0.055).clampLength(0, 1);
+    glassOrb.rotation.y += movement.x / Math.max(lens.radius, 1);
+    glassOrb.rotation.x += movement.y / Math.max(lens.radius, 1);
   }
 }
 
@@ -379,15 +462,13 @@ function render() {
   lens.radius += lens.radiusVelocity;
   lens.motion.multiplyScalar(0.91);
 
-  const pixelRatio = renderer.getPixelRatio();
-  uniforms.uLens.value.set(
-    lens.position.x * pixelRatio,
-    (innerHeight - lens.position.y) * pixelRatio,
-  );
-  uniforms.uRadius.value = lens.radius * pixelRatio;
-  uniforms.uTime.value = performance.now() * 0.001;
-  uniforms.uRoll.value = lens.roll;
-  uniforms.uMotion.value.copy(lens.motion);
+  const aspect = innerWidth / innerHeight;
+  glassOrb.position.x = (lens.position.x / innerWidth * 2 - 1) * aspect;
+  glassOrb.position.y = 1 - lens.position.y / innerHeight * 2;
+  const worldRadius = lens.radius / innerHeight * 2;
+  glassOrb.scale.setScalar(worldRadius);
+  liquidNormalMap.offset.x += 0.00018;
+  liquidNormalMap.offset.y -= 0.00011;
 
   renderer.render(scene, camera);
   requestAnimationFrame(render);
