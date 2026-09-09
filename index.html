@@ -3,80 +3,66 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Stillwater — an interactive lakeside portfolio." />
-    <meta name="theme-color" content="#102d3b" />
-    <title>Stillwater — Creative Developer</title>
+    <meta
+      name="description"
+      content="A refractive digital design exhibition exploring type, color, and liquid glass."
+    />
+    <meta name="theme-color" content="#f7f6f1" />
+    <title>Soft Focus — A Digital Exhibition</title>
   </head>
   <body>
-    <canvas id="lake" aria-hidden="true"></canvas>
+    <canvas id="gallery" aria-hidden="true"></canvas>
 
-    <div class="loading-screen" role="status">
-      <span>Entering Stillwater</span>
-      <i></i>
-    </div>
-
-    <header class="site-header">
-      <a class="wordmark" href="#" aria-label="Stillwater, home">Stillwater</a>
-      <div class="clock" aria-label="Local time">
-        <span class="clock-place">California</span>
-        <span class="clock-time">4:15 p.m.</span>
-      </div>
-      <button class="text-button info-open" type="button">Info</button>
+    <header class="chrome">
+      <a href="#" class="identity">SOFT<br />FOCUS</a>
+      <p class="edition">Digital exhibition · 07</p>
+      <button class="about-button" type="button">About</button>
     </header>
 
-    <main>
-      <section class="welcome" aria-label="Introduction">
-        <p>Move slowly.</p>
-        <p>The water remembers.</p>
-      </section>
-
-      <div class="time-control">
-        <button class="text-button time-button" type="button" aria-expanded="false">
-          <span class="time-label">Now</span>
-          <span class="time-value">4:15 p.m.</span>
-        </button>
-        <div class="time-options" aria-hidden="true">
-          <button type="button" data-time="0">Night</button>
-          <button type="button" data-time="1">Dawn</button>
-          <button type="button" data-time="2">Day</button>
-          <button type="button" data-time="3">Dusk</button>
-        </div>
-      </div>
-
-      <p class="interaction-hint">Drag the sky · Touch the water</p>
+    <main class="sr-only">
+      <h1>Soft Focus: The Museum of Possible Things</h1>
+      <p>
+        An experimental digital exhibition about form, feeling, color, and
+        objects that only exist when you look through them.
+      </p>
+      <ul>
+        <li>Form follows feeling.</li>
+        <li>Design is a social act.</li>
+        <li>Look closer. Move slowly. Stay curious.</li>
+      </ul>
     </main>
 
-    <footer class="site-footer">
-      <button class="text-button sound-toggle" type="button" aria-pressed="false">
-        <span class="sound-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-        <span class="sound-label">Play music</span>
-      </button>
-      <a href="mailto:hello@example.com">Contact</a>
-    </footer>
+    <p class="instruction">Move the glass · Look closer</p>
+    <p class="counter"><span>01</span> / 24</p>
 
-    <aside class="info-panel" aria-hidden="true" aria-labelledby="info-title">
-      <div class="panel-header">
-        <p>Stillwater</p>
-        <button class="text-button info-close" type="button">Close</button>
+    <aside class="about-panel" aria-hidden="true" aria-labelledby="about-title">
+      <div class="about-top">
+        <p>Exhibition notes</p>
+        <button class="about-close" type="button">Close</button>
       </div>
-      <div class="panel-content">
-        <p class="panel-kicker">Independent creative developer</p>
-        <h1 id="info-title">I give form to ideas before they have an obvious shape.</h1>
-        <div class="panel-columns">
+      <div class="about-body">
+        <p class="about-index">SF—07 / Ongoing</p>
+        <h2 id="about-title">A museum with no walls, viewed through a piece of living glass.</h2>
+        <div class="about-columns">
           <p>
-            I partner with thoughtful teams to build identities, interfaces,
-            and digital places where design and technology feel inseparable.
+            Soft Focus is a typographic playground about the tension between
+            clarity and distortion. Every object changes when the lens passes
+            over it.
           </p>
           <p>
-            Selected work spans culture, hospitality, and emerging technology.
-            Currently available for a small number of collaborations.
+            The glass is rendered in WebGL. It bends the underlying image using
+            a spherical surface normal, wavelength-dependent refraction, and
+            view-angle reflections.
           </p>
         </div>
-        <a class="panel-contact" href="mailto:hello@example.com">hello@example.com ↗</a>
       </div>
     </aside>
 
-    <div class="grain" aria-hidden="true"></div>
+    <div class="loading" role="status">
+      <p>Polishing the glass</p>
+      <span></span>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

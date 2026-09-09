@@ -1,8 +1,8 @@
-# Stillwater
+# Soft Focus
 
-An immersive portfolio concept built around an interactive WebGL alpine lake.
-Move across the water to create ripples, drag the landscape, change the time
-of day, or open the information view.
+An experimental digital design exhibition built around a physically inspired
+WebGL liquid-glass cursor. Move the lens through a field of pop-art typography
+to refract, magnify, and split the colors beneath it.
 
 ## Run locally
 
@@ -15,9 +15,10 @@ Create a production build with `npm run build`.
 
 ## Customize
 
-- Portfolio copy and contact details: `index.html`
-- Typography, layout, and colors: `src/styles.css`
-- Water shader, time controls, and ripple behavior: `src/main.js`
-- Original landscape artwork: `public/alpine-lake.webp`
+- Exhibition copy and interface: `index.html`
+- Interface typography and responsive layout: `src/styles.css`
+- Canvas artwork, spring motion, and glass shader: `src/main.js`
 
-Built with Vite and Three.js. Ambient lake audio is generated in the browser.
+The lens uses spherical normals, index-of-refraction offsets, RGB dispersion,
+Schlick Fresnel reflection, adaptive highlights, and spring-based deformation.
+Built with Vite, Three.js, Canvas 2D, and custom GLSL.
