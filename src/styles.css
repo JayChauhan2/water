@@ -1,0 +1,403 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=Manrope:wght@300;400;500&display=swap");
+
+:root {
+  color: #f4f1e8;
+  background: #728f88;
+  font-family: "Manrope", sans-serif;
+  font-synthesis: none;
+  --edge: clamp(1.25rem, 3vw, 3rem);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: #728f88;
+}
+
+button,
+a {
+  color: inherit;
+}
+
+button {
+  font: inherit;
+}
+
+#lake {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.site-header,
+footer {
+  position: fixed;
+  right: var(--edge);
+  left: var(--edge);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.site-header {
+  top: var(--edge);
+}
+
+footer {
+  bottom: var(--edge);
+  font: 300 0.66rem/1.4 "DM Mono", monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+footer a,
+.site-header a,
+.site-header button {
+  pointer-events: auto;
+}
+
+footer a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.35rem;
+}
+
+footer p {
+  margin: 0;
+}
+
+.wordmark {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  color: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.wordmark-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px rgba(244, 241, 232, 0.35);
+}
+
+.sound-toggle {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 300 0.65rem "DM Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.sound-icon {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  height: 0.7rem;
+}
+
+.sound-icon i {
+  display: block;
+  width: 1px;
+  height: 35%;
+  background: currentColor;
+  transition: height 300ms ease;
+}
+
+.sound-toggle[aria-pressed="true"] .sound-icon i:nth-child(1) {
+  height: 55%;
+  animation: meter 1.2s ease-in-out infinite alternate;
+}
+
+.sound-toggle[aria-pressed="true"] .sound-icon i:nth-child(2) {
+  height: 100%;
+  animation: meter 0.8s ease-in-out -0.3s infinite alternate;
+}
+
+.sound-toggle[aria-pressed="true"] .sound-icon i:nth-child(3) {
+  height: 70%;
+  animation: meter 1s ease-in-out -0.5s infinite alternate;
+}
+
+@keyframes meter {
+  to { height: 25%; }
+}
+
+.intro {
+  position: fixed;
+  top: 50%;
+  left: var(--edge);
+  z-index: 5;
+  width: min(34rem, 55vw);
+  transform: translateY(-52%);
+  pointer-events: none;
+}
+
+.eyebrow,
+.intro-copy {
+  font: 300 0.68rem/1.6 "DM Mono", monospace;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  margin: 0 0 1.2rem;
+}
+
+h1 {
+  max-width: 10ch;
+  margin: 0;
+  font-size: clamp(3rem, 7.5vw, 7.8rem);
+  font-weight: 300;
+  letter-spacing: -0.065em;
+  line-height: 0.84;
+  text-shadow: 0 2px 25px rgba(21, 47, 45, 0.09);
+}
+
+.intro-copy {
+  max-width: 31rem;
+  margin: 1.8rem 0 0;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+
+.project-marker {
+  position: fixed;
+  z-index: 8;
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.65rem;
+  border: 0;
+  background: transparent;
+  color: #f4f1e8;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+}
+
+.marker-one { top: 25%; left: 69%; }
+.marker-two { top: 51%; left: 82%; }
+.marker-three { top: 74%; left: 63%; }
+
+.marker-ring {
+  position: relative;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid rgba(244, 241, 232, 0.85);
+  border-radius: 50%;
+}
+
+.marker-ring::after {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 0.22rem;
+  height: 0.22rem;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.marker-ring::before {
+  position: absolute;
+  inset: -0.35rem;
+  border: 1px solid rgba(244, 241, 232, 0.25);
+  border-radius: 50%;
+  content: "";
+  opacity: 0;
+  transform: scale(0.7);
+  transition: 350ms ease;
+}
+
+.project-marker:hover .marker-ring::before,
+.project-marker:focus-visible .marker-ring::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.marker-label {
+  overflow: hidden;
+  max-width: 0;
+  font: 300 0.62rem "DM Mono", monospace;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  transition: max-width 500ms ease, opacity 300ms ease;
+}
+
+.marker-label b {
+  margin-right: 0.5rem;
+  font-weight: 300;
+  opacity: 0.6;
+}
+
+.project-marker:hover .marker-label,
+.project-marker:focus-visible .marker-label {
+  max-width: 11rem;
+  opacity: 1;
+}
+
+.interaction-hint {
+  position: fixed;
+  right: var(--edge);
+  bottom: 5rem;
+  z-index: 5;
+  display: flex;
+  gap: 0.55rem;
+  margin: 0;
+  font: 300 0.62rem "DM Mono", monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+}
+
+.project-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  width: min(32rem, 100%);
+  height: 100%;
+  padding: clamp(2rem, 5vw, 5rem);
+  flex-direction: column;
+  justify-content: center;
+  color: #15312f;
+  background: rgba(237, 234, 221, 0.94);
+  backdrop-filter: blur(18px);
+  transform: translateX(102%);
+  transition: transform 650ms cubic-bezier(0.76, 0, 0.24, 1);
+}
+
+.project-panel.is-open {
+  transform: none;
+}
+
+.panel-close {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 1px solid rgba(21, 49, 47, 0.35);
+  border-radius: 50%;
+  background: none;
+  font-size: 1.4rem;
+  font-weight: 300;
+  cursor: pointer;
+}
+
+.panel-number,
+.panel-role {
+  font: 400 0.64rem "DM Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-panel h2 {
+  max-width: 8ch;
+  margin: 1rem 0 0.8rem;
+  font-size: clamp(3rem, 6vw, 5.5rem);
+  font-weight: 300;
+  letter-spacing: -0.06em;
+  line-height: 0.9;
+}
+
+.panel-description {
+  max-width: 24rem;
+  margin: 3rem 0;
+  color: rgba(21, 49, 47, 0.75);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.panel-link {
+  width: fit-content;
+  font: 400 0.7rem "DM Mono", monospace;
+  letter-spacing: 0.06em;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.4rem;
+  text-transform: uppercase;
+}
+
+.grain {
+  position: fixed;
+  inset: -50%;
+  z-index: 30;
+  opacity: 0.055;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
+  animation: grain 0.2s steps(2) infinite;
+}
+
+@keyframes grain {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(2%, -3%); }
+  50% { transform: translate(-3%, 2%); }
+  75% { transform: translate(3%, 4%); }
+  100% { transform: translate(-2%, -3%); }
+}
+
+@media (max-width: 700px) {
+  .intro {
+    top: 42%;
+    width: calc(100% - 2 * var(--edge));
+  }
+
+  h1 {
+    font-size: clamp(3.4rem, 17vw, 6rem);
+  }
+
+  .intro-copy {
+    max-width: 85%;
+  }
+
+  .marker-one { top: 69%; left: 72%; }
+  .marker-two { top: 81%; left: 34%; }
+  .marker-three { display: none; }
+
+  .marker-label {
+    display: none;
+  }
+
+  footer p,
+  .interaction-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

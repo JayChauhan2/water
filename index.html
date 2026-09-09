@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Stillwater — an immersive, interactive creative developer portfolio."
+    />
+    <meta name="theme-color" content="#9bb4aa" />
+    <title>Stillwater — Creative Developer</title>
+  </head>
+  <body>
+    <canvas id="lake" aria-hidden="true"></canvas>
+
+    <header class="site-header">
+      <a class="wordmark" href="#" aria-label="Stillwater, home">
+        <span class="wordmark-dot"></span>
+        Stillwater
+      </a>
+      <button class="sound-toggle" type="button" aria-pressed="false">
+        <span class="sound-icon" aria-hidden="true">
+          <i></i><i></i><i></i>
+        </span>
+        Sound off
+      </button>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="intro-title">
+        <p class="eyebrow">Independent creative developer · 2026</p>
+        <h1 id="intro-title">I build quiet<br />digital places.</h1>
+        <p class="intro-copy">
+          Thoughtful websites and interactive experiences where design,
+          technology, and a little wonder meet.
+        </p>
+      </section>
+
+      <nav class="project-map" aria-label="Selected work">
+        <button class="project-marker marker-one" data-project="atlas" type="button">
+          <span class="marker-ring"></span>
+          <span class="marker-label"><b>01</b> Atlas Fieldnotes</span>
+        </button>
+        <button class="project-marker marker-two" data-project="morrow" type="button">
+          <span class="marker-ring"></span>
+          <span class="marker-label"><b>02</b> Morrow House</span>
+        </button>
+        <button class="project-marker marker-three" data-project="north" type="button">
+          <span class="marker-ring"></span>
+          <span class="marker-label"><b>03</b> North / 44</span>
+        </button>
+      </nav>
+
+      <p class="interaction-hint">
+        <span aria-hidden="true">↗</span> Move across the water
+      </p>
+    </main>
+
+    <aside class="project-panel" aria-hidden="true" aria-label="Project details">
+      <button class="panel-close" type="button" aria-label="Close project">×</button>
+      <p class="panel-number">Project 01</p>
+      <h2>Atlas Fieldnotes</h2>
+      <p class="panel-role">Digital identity · WebGL · 2026</p>
+      <p class="panel-description">
+        A living field guide for slow travel, pairing regional stories with an
+        exploratory, map-led interface.
+      </p>
+      <a href="#" class="panel-link">View case study <span>↗</span></a>
+    </aside>
+
+    <footer>
+      <a href="mailto:hello@example.com">Let’s make something memorable</a>
+      <p>Available for select projects · Worldwide</p>
+    </footer>
+
+    <div class="grain" aria-hidden="true"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
