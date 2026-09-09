@@ -1,8 +1,8 @@
 # Stillwater
 
-An immersive portfolio concept built around a procedural WebGL lake. Move your
-pointer across the water to create ripples, or select a marker to explore a
-project.
+An immersive portfolio concept built around an interactive WebGL alpine lake.
+Move across the water to create ripples, drag the landscape, change the time
+of day, or open the information view.
 
 ## Run locally
 
@@ -15,8 +15,9 @@ Create a production build with `npm run build`.
 
 ## Customize
 
-- Portfolio copy and project data: `index.html` and `src/main.js`
+- Portfolio copy and contact details: `index.html`
 - Typography, layout, and colors: `src/styles.css`
-- Water shader and ripple behavior: `src/main.js`
+- Water shader, time controls, and ripple behavior: `src/main.js`
+- Original landscape artwork: `public/alpine-lake.webp`
 
-Built with Vite and Three.js. No image or audio assets are required.
+Built with Vite and Three.js. Ambient lake audio is generated in the browser.

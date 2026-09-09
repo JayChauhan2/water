@@ -3,174 +3,166 @@ import "./styles.css";
 
 const canvas = document.querySelector("#lake");
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: true,
-  alpha: false,
   powerPreference: "high-performance",
 });
+
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 const clock = new THREE.Clock();
-const rippleSlots = Array.from({ length: 12 }, () => new THREE.Vector3(-10, -10, -100));
+const rippleSlots = Array.from({ length: 20 }, () => new THREE.Vector3(-10, -10, -100));
+const lakeTexture = await new THREE.TextureLoader().loadAsync("/alpine-lake.webp");
+lakeTexture.colorSpace = THREE.SRGBColorSpace;
+lakeTexture.minFilter = THREE.LinearFilter;
+lakeTexture.magFilter = THREE.LinearFilter;
 
 const uniforms = {
   uTime: { value: 0 },
   uResolution: { value: new THREE.Vector2() },
-  uPointer: { value: new THREE.Vector2(0.72, 0.45) },
+  uTexture: { value: lakeTexture },
+  uPointer: { value: new THREE.Vector2(0.5, 0.25) },
+  uSceneOffset: { value: new THREE.Vector2() },
   uRipples: { value: rippleSlots },
+  uMood: { value: 2 },
   uStill: { value: reducedMotion ? 1 : 0 },
 };
 
-const vertexShader = /* glsl */ `
-  varying vec2 vUv;
-
-  void main() {
-    vUv = uv;
-    gl_Position = vec4(position, 1.0);
-  }
-`;
-
-const fragmentShader = /* glsl */ `
-  precision highp float;
-
-  varying vec2 vUv;
-  uniform float uTime;
-  uniform float uStill;
-  uniform vec2 uResolution;
-  uniform vec2 uPointer;
-  uniform vec3 uRipples[12];
-
-  float hash(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-  }
-
-  float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(
-      mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-      mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x),
-      f.y
-    );
-  }
-
-  float fbm(vec2 p) {
-    float value = 0.0;
-    float amplitude = 0.5;
-    mat2 rotation = mat2(0.80, 0.60, -0.60, 0.80);
-    for (int i = 0; i < 5; i++) {
-      value += amplitude * noise(p);
-      p = rotation * p * 2.03 + 7.1;
-      amplitude *= 0.5;
+const material = new THREE.ShaderMaterial({
+  uniforms,
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = vec4(position, 1.0);
     }
-    return value;
-  }
+  `,
+  fragmentShader: /* glsl */ `
+    precision highp float;
 
-  float rippleHeight(vec2 uv) {
-    float height = 0.0;
-    float aspect = uResolution.x / max(uResolution.y, 1.0);
-    for (int i = 0; i < 12; i++) {
-      float age = uTime - uRipples[i].z;
-      vec2 delta = uv - uRipples[i].xy;
-      delta.x *= aspect;
-      float distanceFromDrop = length(delta);
-      float envelope = exp(-distanceFromDrop * 5.5) * exp(-age * 1.35);
-      float ring = sin(distanceFromDrop * 68.0 - age * 8.5);
-      float outwardMask = smoothstep(age * 0.62 + 0.10, age * 0.62, distanceFromDrop);
-      height += ring * envelope * outwardMask * step(0.0, age) * step(age, 4.5);
+    varying vec2 vUv;
+    uniform sampler2D uTexture;
+    uniform float uTime;
+    uniform float uMood;
+    uniform float uStill;
+    uniform vec2 uResolution;
+    uniform vec2 uPointer;
+    uniform vec2 uSceneOffset;
+    uniform vec3 uRipples[20];
+
+    float hash(vec2 p) {
+      p = fract(p * vec2(123.34, 456.21));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
     }
-    return height;
-  }
 
-  float waterHeight(vec2 uv, float time) {
-    vec2 p = uv;
-    p.x *= uResolution.x / max(uResolution.y, 1.0);
-    float broad = sin(p.x * 7.0 + p.y * 4.0 + time * 0.24) * 0.28;
-    broad += sin(p.x * 13.0 - p.y * 6.0 - time * 0.19) * 0.16;
-    float detail = fbm(p * 4.0 + vec2(time * 0.035, -time * 0.025));
-    return broad * 0.08 + detail * 0.13 + rippleHeight(uv) * 0.16;
-  }
+    float noise(vec2 p) {
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(
+        mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+        mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x),
+        f.y
+      );
+    }
 
-  void main() {
-    vec2 uv = vUv;
-    float time = mix(uTime, 12.0, uStill);
-    vec2 pixel = vec2(1.5) / uResolution;
-    float height = waterHeight(uv, time);
-    float heightX = waterHeight(uv + vec2(pixel.x, 0.0), time);
-    float heightY = waterHeight(uv + vec2(0.0, pixel.y), time);
-    vec2 slope = vec2(heightX - height, heightY - height) * 35.0;
-    vec2 reflectedUv = uv + slope * 0.018;
+    vec2 coverUv(vec2 uv) {
+      float screenAspect = uResolution.x / max(uResolution.y, 1.0);
+      float imageAspect = 1.7777778;
+      vec2 scale = vec2(
+        min(screenAspect / imageAspect, 1.0),
+        min(imageAspect / screenAspect, 1.0)
+      );
+      return (uv - 0.5) * scale + 0.5;
+    }
 
-    vec3 deepWater = vec3(0.18, 0.35, 0.34);
-    vec3 jadeWater = vec3(0.40, 0.57, 0.53);
-    vec3 sky = vec3(0.63, 0.72, 0.68);
-    vec3 cloud = vec3(0.84, 0.84, 0.76);
+    float rippleField(vec2 uv) {
+      float field = 0.0;
+      float aspect = uResolution.x / max(uResolution.y, 1.0);
 
-    float depthNoise = fbm(uv * vec2(2.3, 3.8) + vec2(0.0, time * 0.008));
-    vec3 color = mix(deepWater, jadeWater, smoothstep(0.12, 0.95, uv.y + depthNoise * 0.18));
+      for (int i = 0; i < 20; i++) {
+        float age = uTime - uRipples[i].z;
+        vec2 delta = uv - uRipples[i].xy;
+        delta.x *= aspect;
+        float d = length(delta);
+        float radius = age * 0.105;
+        float ring = sin((d - radius) * 145.0);
+        float band = exp(-abs(d - radius) * 19.0);
+        float wake = exp(-d * 4.6);
+        float life = exp(-age * 0.58) * step(0.0, age) * step(age, 7.0);
+        field += ring * band * wake * life;
+      }
+      return field;
+    }
 
-    float cloudShape = fbm(reflectedUv * vec2(2.0, 3.4) + vec2(-0.6, time * 0.004));
-    cloudShape += fbm(reflectedUv * vec2(5.0, 7.0) - vec2(time * 0.003, 0.0)) * 0.25;
-    float clouds = smoothstep(0.60, 0.90, cloudShape + reflectedUv.y * 0.18);
-    color = mix(color, sky, 0.24 + uv.y * 0.12);
-    color = mix(color, cloud, clouds * 0.34);
+    float waterHeight(vec2 uv, float time) {
+      float aspect = uResolution.x / max(uResolution.y, 1.0);
+      vec2 p = vec2(uv.x * aspect, uv.y);
+      float broad = sin(p.x * 42.0 + p.y * 21.0 + time * 0.65) * 0.018;
+      broad += sin(p.x * 71.0 - p.y * 34.0 - time * 0.42) * 0.01;
+      broad += (noise(p * 35.0 + vec2(time * 0.07, 0.0)) - 0.5) * 0.025;
+      return broad + rippleField(uv) * 0.12;
+    }
 
-    float normalLight = clamp(0.55 + slope.x * -0.9 + slope.y * 0.55, 0.0, 1.0);
-    color += vec3(0.22, 0.25, 0.20) * pow(normalLight, 6.0) * 0.45;
+    vec3 gradeTime(vec3 color, float mood, vec2 uv) {
+      vec3 night = color * vec3(0.18, 0.28, 0.44) + vec3(0.005, 0.012, 0.035);
+      vec3 dawn = color * vec3(0.72, 0.58, 0.54) + vec3(0.12, 0.055, 0.025);
+      vec3 day = color;
+      vec3 dusk = color * vec3(0.60, 0.43, 0.48) + vec3(0.12, 0.045, 0.04);
 
-    float glintNoise = noise(uv * uResolution * 0.32 + time * 0.8);
-    float glint = pow(max(0.0, 1.0 - length(slope - vec2(-0.03, 0.02)) * 3.2), 18.0);
-    glint *= smoothstep(0.79, 1.0, glintNoise);
-    color += vec3(1.0, 0.94, 0.70) * glint * 0.65;
+      vec3 result = night;
+      if (mood > 0.5) result = dawn;
+      if (mood > 1.5) result = day;
+      if (mood > 2.5) result = dusk;
 
-    float pointerDistance = distance(uv, uPointer);
-    color += vec3(0.04, 0.08, 0.07) * exp(-pointerDistance * 9.0) * 0.2;
+      float horizonGlow = exp(-abs(uv.y - 0.46) * 11.0);
+      if (mood > 0.5 && mood < 1.5) result += vec3(0.20, 0.09, 0.035) * horizonGlow;
+      if (mood > 2.5) result += vec3(0.18, 0.055, 0.025) * horizonGlow;
+      return result;
+    }
 
-    float vignette = smoothstep(0.85, 0.2, distance(uv, vec2(0.52, 0.48)));
-    color *= 0.86 + vignette * 0.18;
-    color += (hash(gl_FragCoord.xy + time) - 0.5) / 255.0;
+    void main() {
+      vec2 uv = vUv;
+      float time = mix(uTime, 8.0, uStill);
+      float waterMask = 1.0 - smoothstep(0.43, 0.51, uv.y);
+      vec2 pixel = vec2(1.35) / uResolution;
+      float center = waterHeight(uv, time);
+      float right = waterHeight(uv + vec2(pixel.x, 0.0), time);
+      float above = waterHeight(uv + vec2(0.0, pixel.y), time);
+      vec2 normal = vec2(right - center, above - center) * 18.0;
 
-    gl_FragColor = vec4(color, 1.0);
-  }
-`;
+      vec2 parallax = uSceneOffset * mix(0.006, 0.015, uv.y);
+      vec2 sampleUv = coverUv(uv + parallax);
+      sampleUv += normal * 0.038 * waterMask;
 
-const material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader });
-const water = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
-scene.add(water);
+      vec3 color = texture2D(uTexture, sampleUv).rgb;
 
-let rippleIndex = 0;
-let lastRippleAt = 0;
-let lastRipplePosition = new THREE.Vector2(-1, -1);
-const pointer = new THREE.Vector2(0.72, 0.45);
+      float crest = max(0.0, -normal.x * 0.6 + normal.y * 0.8);
+      float trough = max(0.0, normal.x * 0.45 - normal.y * 0.55);
+      color += vec3(0.66, 0.80, 0.86) * pow(crest, 1.6) * waterMask * 0.75;
+      color -= vec3(0.05, 0.11, 0.14) * trough * waterMask * 0.7;
 
-function addRipple(x, y, force = false) {
-  const now = performance.now();
-  const next = new THREE.Vector2(x, y);
-  const moved = next.distanceTo(lastRipplePosition);
-  if (!force && (now - lastRippleAt < 75 || moved < 0.018)) return;
+      float sparkle = pow(max(0.0, crest), 8.0);
+      sparkle *= step(0.89, hash(floor(gl_FragCoord.xy * 0.45) + floor(time * 8.0)));
+      color += vec3(1.0, 0.93, 0.75) * sparkle * waterMask;
 
-  rippleSlots[rippleIndex].set(x, y, uniforms.uTime.value);
-  rippleIndex = (rippleIndex + 1) % rippleSlots.length;
-  lastRippleAt = now;
-  lastRipplePosition.copy(next);
-}
+      color = gradeTime(color, uMood, uv);
+      float vignette = smoothstep(0.95, 0.25, distance(uv, vec2(0.5)));
+      color *= 0.78 + vignette * 0.24;
+      color += (hash(gl_FragCoord.xy + time) - 0.5) / 255.0;
 
-function updatePointer(event, force = false) {
-  pointer.set(event.clientX / innerWidth, 1 - event.clientY / innerHeight);
-  uniforms.uPointer.value.copy(pointer);
-  addRipple(pointer.x, pointer.y, force);
-}
+      gl_FragColor = vec4(color, 1.0);
+    }
+  `,
+});
 
-addEventListener("pointermove", updatePointer, { passive: true });
-addEventListener("pointerdown", (event) => updatePointer(event, true), { passive: true });
+scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
+document.documentElement.classList.add("is-loaded");
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -182,81 +174,149 @@ resize();
 
 function render() {
   uniforms.uTime.value = clock.getElapsedTime();
+  uniforms.uSceneOffset.value.lerp(sceneTarget, 0.035);
   renderer.render(scene, camera);
   requestAnimationFrame(render);
 }
+
+const pointer = new THREE.Vector2(0.5, 0.25);
+const sceneTarget = new THREE.Vector2();
+let rippleIndex = 0;
+let lastRippleAt = 0;
+let lastRipplePosition = new THREE.Vector2(-1, -1);
+let dragging = false;
+let dragStart = new THREE.Vector2();
+let sceneStart = new THREE.Vector2();
+
 render();
 
-const projectData = {
-  atlas: {
-    number: "Project 01",
-    title: "Atlas Fieldnotes",
-    role: "Digital identity · WebGL · 2026",
-    description:
-      "A living field guide for slow travel, pairing regional stories with an exploratory, map-led interface.",
-  },
-  morrow: {
-    number: "Project 02",
-    title: "Morrow House",
-    role: "Art direction · Commerce · 2025",
-    description:
-      "A tactile digital home for an independent furniture studio, shaped around material, process, and provenance.",
-  },
-  north: {
-    number: "Project 03",
-    title: "North / 44",
-    role: "Experience design · Film · 2025",
-    description:
-      "An interactive documentary tracing winter, memory, and daily life across four northern communities.",
-  },
-};
+function addRipple(x, y, force = false) {
+  if (y > 0.54) return;
+  const now = performance.now();
+  const next = new THREE.Vector2(x, y);
+  if (!force && (now - lastRippleAt < 60 || next.distanceTo(lastRipplePosition) < 0.012)) return;
 
-const panel = document.querySelector(".project-panel");
-const panelClose = panel.querySelector(".panel-close");
-const panelNumber = panel.querySelector(".panel-number");
-const panelTitle = panel.querySelector("h2");
-const panelRole = panel.querySelector(".panel-role");
-const panelDescription = panel.querySelector(".panel-description");
-
-function openProject(projectKey) {
-  const project = projectData[projectKey];
-  panelNumber.textContent = project.number;
-  panelTitle.textContent = project.title;
-  panelRole.textContent = project.role;
-  panelDescription.textContent = project.description;
-  panel.classList.add("is-open");
-  panel.setAttribute("aria-hidden", "false");
-  panelClose.focus();
+  rippleSlots[rippleIndex].set(x, y, uniforms.uTime.value);
+  rippleIndex = (rippleIndex + 1) % rippleSlots.length;
+  lastRippleAt = now;
+  lastRipplePosition.copy(next);
 }
 
-function closeProject() {
-  panel.classList.remove("is-open");
-  panel.setAttribute("aria-hidden", "true");
+function setPointer(event) {
+  pointer.set(event.clientX / innerWidth, 1 - event.clientY / innerHeight);
+  uniforms.uPointer.value.copy(pointer);
 }
 
-document.querySelectorAll(".project-marker").forEach((marker) => {
-  marker.addEventListener("click", () => openProject(marker.dataset.project));
+addEventListener("pointerdown", (event) => {
+  setPointer(event);
+  dragging = true;
+  dragStart.set(event.clientX, event.clientY);
+  sceneStart.copy(sceneTarget);
+  addRipple(pointer.x, pointer.y, true);
+  document.documentElement.classList.add("has-interacted");
 });
-panelClose.addEventListener("click", closeProject);
+
+addEventListener("pointermove", (event) => {
+  setPointer(event);
+  addRipple(pointer.x, pointer.y);
+  if (!dragging) return;
+
+  sceneTarget.x = THREE.MathUtils.clamp(
+    sceneStart.x + (event.clientX - dragStart.x) / innerWidth,
+    -0.7,
+    0.7,
+  );
+  sceneTarget.y = THREE.MathUtils.clamp(
+    sceneStart.y - (event.clientY - dragStart.y) / innerHeight,
+    -0.35,
+    0.35,
+  );
+});
+
+addEventListener("pointerup", () => {
+  dragging = false;
+});
+
+addEventListener("pointercancel", () => {
+  dragging = false;
+});
+
+const clockTime = document.querySelector(".clock-time");
+const timeValue = document.querySelector(".time-value");
+const formatTime = () =>
+  new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "America/Los_Angeles",
+  })
+    .format(new Date())
+    .toLowerCase()
+    .replace(" ", "");
+
+function updateClock() {
+  const value = formatTime();
+  clockTime.textContent = value;
+  if (document.querySelector(".time-label").textContent === "Now") timeValue.textContent = value;
+}
+
+updateClock();
+setInterval(updateClock, 30000);
+
+const timeButton = document.querySelector(".time-button");
+const timeOptions = document.querySelector(".time-options");
+const timeNames = ["11:30 p.m.", "6:18 a.m.", "1:24 p.m.", "7:42 p.m."];
+
+timeButton.addEventListener("click", () => {
+  const open = !timeOptions.classList.contains("is-open");
+  timeOptions.classList.toggle("is-open", open);
+  timeOptions.setAttribute("aria-hidden", String(!open));
+  timeButton.setAttribute("aria-expanded", String(open));
+});
+
+timeOptions.querySelectorAll("button").forEach((button) => {
+  button.addEventListener("click", () => {
+    const mood = Number(button.dataset.time);
+    uniforms.uMood.value = mood;
+    document.querySelector(".time-label").textContent = button.textContent;
+    timeValue.textContent = timeNames[mood];
+    timeOptions.classList.remove("is-open");
+    timeOptions.setAttribute("aria-hidden", "true");
+    timeButton.setAttribute("aria-expanded", "false");
+  });
+});
+
+const infoPanel = document.querySelector(".info-panel");
+const infoOpen = document.querySelector(".info-open");
+const infoClose = document.querySelector(".info-close");
+
+function setInfo(open) {
+  infoPanel.classList.toggle("is-open", open);
+  infoPanel.setAttribute("aria-hidden", String(!open));
+  if (open) infoClose.focus();
+  else infoOpen.focus();
+}
+
+infoOpen.addEventListener("click", () => setInfo(true));
+infoClose.addEventListener("click", () => setInfo(false));
 addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeProject();
+  if (event.key === "Escape") setInfo(false);
 });
 
 let audioContext;
 let waterNoise;
 const soundToggle = document.querySelector(".sound-toggle");
 
-function startWaterSound() {
+function createLakeSound() {
   audioContext = new AudioContext();
-  const length = audioContext.sampleRate * 3;
+  const length = audioContext.sampleRate * 4;
   const buffer = audioContext.createBuffer(1, length, audioContext.sampleRate);
   const data = buffer.getChannelData(0);
-  let last = 0;
+  let low = 0;
 
   for (let i = 0; i < length; i++) {
-    const white = Math.random() * 2 - 1;
-    last = last * 0.985 + white * 0.015;
-    data[i] = last * 2.2;
+    low = low * 0.992 + (Math.random() * 2 - 1) * 0.008;
+    data[i] = low * 2.8;
   }
 
   waterNoise = audioContext.createBufferSource();
@@ -265,19 +325,16 @@ function startWaterSound() {
   waterNoise.buffer = buffer;
   waterNoise.loop = true;
   filter.type = "lowpass";
-  filter.frequency.value = 720;
-  gain.gain.value = 0.08;
+  filter.frequency.value = 620;
+  gain.gain.value = 0.1;
   waterNoise.connect(filter).connect(gain).connect(audioContext.destination);
   waterNoise.start();
 }
 
 soundToggle.addEventListener("click", () => {
   const active = soundToggle.getAttribute("aria-pressed") === "true";
-  if (!audioContext) startWaterSound();
-
+  if (!audioContext) createLakeSound();
   soundToggle.setAttribute("aria-pressed", String(!active));
-  soundToggle.lastChild.textContent = active ? " Sound off" : " Sound on";
-  if (audioContext) {
-    active ? audioContext.suspend() : audioContext.resume();
-  }
+  document.querySelector(".sound-label").textContent = active ? "Play music" : "Pause music";
+  if (audioContext) active ? audioContext.suspend() : audioContext.resume();
 });
