@@ -13,7 +13,7 @@ const renderer = new THREE.WebGLRenderer({
 
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.setClearColor(0xf7f6f1, 1);
+renderer.setClearColor(0xffffff, 1);
 
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -65,10 +65,10 @@ const material = new THREE.ShaderMaterial({
       return mat2(c, -s, s, c);
     }
 
-    vec3 refractedSample(vec2 uv, vec3 normal, float ior) {
+    vec3 refractedSample(vec2 uv, vec3 normal, float ior, float bevel) {
       vec3 incident = vec3(0.0, 0.0, -1.0);
       vec3 ray = refract(incident, normal, 1.0 / ior);
-      vec2 offset = ray.xy * (uRadius / uResolution) * 0.54;
+      vec2 offset = ray.xy * (uRadius / uResolution) * 0.16 * bevel;
       return texture2D(uArt, clamp(uv + offset, 0.002, 0.998)).rgb;
     }
 
@@ -92,20 +92,21 @@ const material = new THREE.ShaderMaterial({
       float lensMask = 1.0 - smoothstep(0.985, 1.008, distanceToLens);
       float outsideShadow = max(0.0, shadowShape - lensMask);
       float shadowDirection = smoothstep(-0.7, 0.8, q.y - q.x * 0.35);
-      color *= 1.0 - outsideShadow * mix(0.12, 0.025, shadowDirection);
+      color *= 1.0 - outsideShadow * mix(0.075, 0.018, shadowDirection);
 
       if (distanceToLens < 1.02) {
         float safeDistance = min(distanceToLens, 0.999);
         float domeHeight = sqrt(max(0.0, 1.0 - safeDistance * safeDistance));
-        vec3 normal = normalize(vec3(q.x, q.y, domeHeight * 0.78));
+        vec3 normal = normalize(vec3(q.x, q.y, domeHeight));
+        float opticalBevel = smoothstep(0.42, 0.96, distanceToLens);
 
         vec2 centerUv = uLens / uResolution;
-        vec2 magnifiedUv = centerUv + (vUv - centerUv) * 0.91;
+        vec2 magnifiedUv = centerUv + (vUv - centerUv) * 0.975;
 
         vec3 glass;
-        glass.r = refractedSample(magnifiedUv, normal, 1.475).r;
-        glass.g = refractedSample(magnifiedUv, normal, 1.500).g;
-        glass.b = refractedSample(magnifiedUv, normal, 1.535).b;
+        glass.r = refractedSample(magnifiedUv, normal, 1.495, opticalBevel).r;
+        glass.g = refractedSample(magnifiedUv, normal, 1.500, opticalBevel).g;
+        glass.b = refractedSample(magnifiedUv, normal, 1.507, opticalBevel).b;
 
         vec3 viewDirection = vec3(0.0, 0.0, 1.0);
         float cosTheta = clamp(dot(normal, viewDirection), 0.0, 1.0);
@@ -124,18 +125,18 @@ const material = new THREE.ShaderMaterial({
           smoothstep(0.42, 0.78, luma)
         );
 
-        glass = mix(glass, adaptiveReflection, fresnel * 0.28);
-        glass += vec3(1.0, 0.985, 0.94) * specular * 0.82;
-        glass += vec3(0.62, 0.78, 1.0) * broadSpecular * 0.07;
+        glass = mix(glass, adaptiveReflection, fresnel * 0.13);
+        glass += vec3(1.0, 0.985, 0.94) * specular * 0.68;
+        glass += vec3(0.62, 0.78, 1.0) * broadSpecular * 0.035;
 
         float innerCaustic = smoothstep(0.70, 0.94, distanceToLens)
           * (1.0 - smoothstep(0.94, 1.0, distanceToLens));
         float litSide = smoothstep(-0.65, 0.9, dot(normal.xy, normalize(vec2(-0.6, 0.8))));
-        glass += vec3(0.90, 0.96, 1.0) * innerCaustic * litSide * 0.26;
-        glass -= vec3(0.08, 0.04, 0.12) * innerCaustic * (1.0 - litSide) * 0.11;
+        glass += vec3(0.90, 0.96, 1.0) * innerCaustic * litSide * 0.12;
+        glass -= vec3(0.08, 0.04, 0.12) * innerCaustic * (1.0 - litSide) * 0.05;
 
         float rim = smoothstep(0.88, 1.0, distanceToLens);
-        glass = mix(glass, adaptiveReflection, rim * fresnel * 0.36);
+        glass = mix(glass, adaptiveReflection, rim * fresnel * 0.18);
         color = mix(color, glass, lensMask);
       }
 
@@ -153,8 +154,8 @@ const palette = {
   yellow: "#ffd51b",
   green: "#0a8f55",
   pink: "#ed4fa8",
-  paper: "#f7f6f1",
-  quiet: "#d8d7d0",
+  paper: "#ffffff",
+  quiet: "#deded8",
 };
 
 function font(size, family = "Manrope", style = "", weight = 500) {
@@ -301,23 +302,23 @@ addEventListener(
   "pointerdown",
   (event) => {
     moveLens(event);
-    lens.wobble = Math.min(1, lens.wobble + 0.72);
+    lens.wobble = Math.min(0.5, lens.wobble + 0.35);
   },
   { passive: true },
 );
 
 function render() {
   const delta = Math.min(clock.getDelta(), 0.034) * 60;
-  const spring = lens.target.clone().sub(lens.position).multiplyScalar(0.115 * delta);
+  const spring = lens.target.clone().sub(lens.position).multiplyScalar(0.24 * delta);
   lens.velocity.add(spring);
-  lens.velocity.multiplyScalar(Math.pow(0.76, delta));
+  lens.velocity.multiplyScalar(Math.pow(0.62, delta));
   lens.position.addScaledVector(lens.velocity, delta);
 
   const speed = lens.velocity.length();
   if (speed > 0.05) lens.angle = Math.atan2(-lens.velocity.y, lens.velocity.x);
   lens.stretch = THREE.MathUtils.lerp(
     lens.stretch,
-    THREE.MathUtils.clamp(speed / 70, 0, 0.22),
+    THREE.MathUtils.clamp(speed / 110, 0, 0.075),
     0.18,
   );
   lens.wobble *= Math.pow(0.955, delta);

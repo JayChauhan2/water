@@ -2,7 +2,7 @@
 
 :root {
   color: #111;
-  background: #f7f6f1;
+  background: #fff;
   font-family: "DM Mono", monospace;
   font-synthesis: none;
   --edge: clamp(1rem, 2vw, 2rem);
@@ -21,7 +21,7 @@ body {
 
 body {
   overflow: hidden;
-  background: #f7f6f1;
+  background: #fff;
 }
 
 button,
@@ -209,7 +209,7 @@ a {
   display: grid;
   place-content: center;
   gap: 1rem;
-  background: #f7f6f1;
+  background: #fff;
   transition: opacity 700ms ease, visibility 0s 700ms;
 }
 
