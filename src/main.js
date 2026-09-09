@@ -29,6 +29,7 @@ const uniforms = {
   uResolution: { value: new THREE.Vector2() },
   uLens: { value: new THREE.Vector2() },
   uRadius: { value: 130 },
+  uTime: { value: 0 },
 };
 
 const material = new THREE.ShaderMaterial({
@@ -49,12 +50,13 @@ const material = new THREE.ShaderMaterial({
     uniform vec2 uResolution;
     uniform vec2 uLens;
     uniform float uRadius;
+    uniform float uTime;
 
-    vec3 refractedSample(vec2 uv, vec3 normal, float ior, float bevel) {
+    vec2 refractedUv(vec2 uv, vec3 normal, float ior, float bevel) {
       vec3 incident = vec3(0.0, 0.0, -1.0);
       vec3 ray = refract(incident, normal, 1.0 / ior);
       vec2 offset = ray.xy * (uRadius / uResolution) * 0.16 * bevel;
-      return texture2D(uArt, clamp(uv + offset, 0.002, 0.998)).rgb;
+      return clamp(uv + offset, 0.002, 0.998);
     }
 
     void main() {
@@ -75,23 +77,46 @@ const material = new THREE.ShaderMaterial({
       if (distanceToLens < 1.02) {
         float safeDistance = min(distanceToLens, 0.999);
         float domeHeight = sqrt(max(0.0, 1.0 - safeDistance * safeDistance));
-        vec3 normal = normalize(vec3(q.x, q.y, domeHeight));
+        float angle = atan(q.y, q.x);
+        vec2 radial = normalize(q + vec2(0.0001));
+        vec2 tangent = vec2(-radial.y, radial.x);
+        float liquidFlow = sin(angle * 3.0 - uTime * 0.72)
+          + sin(angle * 5.0 + uTime * 0.43) * 0.45;
+        float surfaceFlow = liquidFlow * smoothstep(0.52, 0.96, distanceToLens);
+        vec2 flowingNormal = q + tangent * surfaceFlow * 0.018;
+        vec3 normal = normalize(vec3(flowingNormal, domeHeight));
         float opticalBevel = smoothstep(0.42, 0.96, distanceToLens);
 
         vec2 centerUv = uLens / uResolution;
         vec2 magnifiedUv = centerUv + (vUv - centerUv) * 0.975;
+        vec2 baseRefraction = refractedUv(magnifiedUv, normal, 1.5, opticalBevel);
 
-        vec3 glass;
-        glass.r = refractedSample(magnifiedUv, normal, 1.495, opticalBevel).r;
-        glass.g = refractedSample(magnifiedUv, normal, 1.500, opticalBevel).g;
-        glass.b = refractedSample(magnifiedUv, normal, 1.507, opticalBevel).b;
+        // Wavelength-dependent bending becomes visible only through the bevel.
+        // Blue bends more than red, producing real spectral fringes at contrast edges.
+        vec2 spectralShift = radial * (5.5 / uResolution) * opticalBevel;
+        vec2 uvRed = clamp(baseRefraction - spectralShift, 0.002, 0.998);
+        vec2 uvGreen = baseRefraction;
+        vec2 uvBlue = clamp(baseRefraction + spectralShift, 0.002, 0.998);
+        vec3 glass = vec3(
+          texture2D(uArt, uvRed).r,
+          texture2D(uArt, uvGreen).g,
+          texture2D(uArt, uvBlue).b
+        );
+
+        // Mild wavelength-selective absorption gives thick glass its green body tint.
+        float pathLength = mix(1.25, 0.18, opticalBevel);
+        glass *= exp(-vec3(0.012, 0.003, 0.009) * pathLength);
 
         vec3 viewDirection = vec3(0.0, 0.0, 1.0);
         float cosTheta = clamp(dot(normal, viewDirection), 0.0, 1.0);
         float f0 = pow((1.5 - 1.0) / (1.5 + 1.0), 2.0);
         float fresnel = f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
 
-        vec3 lightDirection = normalize(vec3(-0.58, 0.72, 1.0));
+        vec3 lightDirection = normalize(vec3(
+          -0.58 + sin(uTime * 0.19) * 0.035,
+          0.72 + cos(uTime * 0.16) * 0.025,
+          1.0
+        ));
         vec3 halfVector = normalize(lightDirection + viewDirection);
         float specular = pow(max(dot(normal, halfVector), 0.0), 82.0);
         float broadSpecular = pow(max(dot(normal, halfVector), 0.0), 12.0);
@@ -110,7 +135,11 @@ const material = new THREE.ShaderMaterial({
         float innerCaustic = smoothstep(0.70, 0.94, distanceToLens)
           * (1.0 - smoothstep(0.94, 1.0, distanceToLens));
         float litSide = smoothstep(-0.65, 0.9, dot(normal.xy, normalize(vec2(-0.6, 0.8))));
-        glass += vec3(0.90, 0.96, 1.0) * innerCaustic * litSide * 0.12;
+        float flowingCaustic = 0.72 + 0.28 * sin(angle * 4.0 - uTime * 0.62);
+        glass += vec3(0.82, 0.94, 1.0)
+          * innerCaustic * litSide * flowingCaustic * 0.15;
+        glass += vec3(1.0, 0.78, 0.48)
+          * innerCaustic * (1.0 - litSide) * (1.0 - flowingCaustic) * 0.055;
         glass -= vec3(0.08, 0.04, 0.12) * innerCaustic * (1.0 - litSide) * 0.05;
 
         float rim = smoothstep(0.88, 1.0, distanceToLens);
@@ -263,6 +292,7 @@ function render() {
     (innerHeight - lens.position.y) * pixelRatio,
   );
   uniforms.uRadius.value = baseRadius * pixelRatio;
+  uniforms.uTime.value = performance.now() * 0.001;
 
   renderer.render(scene, camera);
   requestAnimationFrame(render);
