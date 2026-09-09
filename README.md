@@ -22,5 +22,6 @@ Create a production build with `npm run build`.
 The stable circular lens uses spherical normals, bevel-localized spectral
 dispersion, Schlick Fresnel reflection, wavelength-selective absorption,
 flowing caustics, continuously moving surface normals, and a point light fixed
-to the center of the viewport. Built with Vite, Three.js, Canvas 2D, and custom
-GLSL.
+to the center of the viewport. Pointer movement rolls the internal optical
+surface, while pressing smoothly expands the lens and releasing contracts it.
+Built with Vite, Three.js, Canvas 2D, and custom GLSL.

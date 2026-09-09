@@ -30,6 +30,8 @@ const uniforms = {
   uLens: { value: new THREE.Vector2() },
   uRadius: { value: 130 },
   uTime: { value: 0 },
+  uRoll: { value: 0 },
+  uMotion: { value: new THREE.Vector2() },
 };
 
 const material = new THREE.ShaderMaterial({
@@ -51,6 +53,8 @@ const material = new THREE.ShaderMaterial({
     uniform vec2 uLens;
     uniform float uRadius;
     uniform float uTime;
+    uniform float uRoll;
+    uniform vec2 uMotion;
 
     vec2 refractedUv(vec2 uv, vec3 normal, float ior, float bevel) {
       vec3 incident = vec3(0.0, 0.0, -1.0);
@@ -80,10 +84,12 @@ const material = new THREE.ShaderMaterial({
         float angle = atan(q.y, q.x);
         vec2 radial = normalize(q + vec2(0.0001));
         vec2 tangent = vec2(-radial.y, radial.x);
-        float liquidFlow = sin(angle * 3.0 - uTime * 0.72)
-          + sin(angle * 5.0 + uTime * 0.43) * 0.45;
+        float liquidFlow = sin(angle * 3.0 + uRoll * 1.3 - uTime * 0.72)
+          + sin(angle * 5.0 - uRoll * 0.8 + uTime * 0.43) * 0.45;
         float surfaceFlow = liquidFlow * smoothstep(0.52, 0.96, distanceToLens);
-        vec2 flowingNormal = q + tangent * surfaceFlow * 0.018;
+        vec2 flowingNormal = q
+          + tangent * surfaceFlow * 0.018
+          + uMotion * smoothstep(0.58, 0.97, distanceToLens) * 0.026;
         vec3 normal = normalize(vec3(flowingNormal, domeHeight));
         float opticalBevel = smoothstep(0.42, 0.96, distanceToLens);
 
@@ -149,6 +155,15 @@ const material = new THREE.ShaderMaterial({
         glass += vec3(1.0, 0.78, 0.48)
           * innerCaustic * (1.0 - litSide) * (1.0 - flowingCaustic) * 0.055;
         glass -= vec3(0.08, 0.04, 0.12) * innerCaustic * (1.0 - litSide) * 0.05;
+
+        float motionAmount = clamp(length(uMotion), 0.0, 1.0);
+        float motionAngle = atan(uMotion.y, uMotion.x);
+        float rollingGlint = pow(
+          max(0.0, cos(angle - motionAngle - uRoll) * 0.5 + 0.5),
+          12.0
+        );
+        glass += vec3(0.72, 0.88, 1.0)
+          * rollingGlint * innerCaustic * motionAmount * 0.12;
 
         float rim = smoothstep(0.88, 1.0, distanceToLens);
         glass = mix(glass, adaptiveReflection, rim * fresnel * 0.18);
@@ -270,16 +285,26 @@ function drawArt() {
 
 const lens = {
   position: new THREE.Vector2(innerWidth * 0.5, innerHeight * 0.5),
+  previous: new THREE.Vector2(innerWidth * 0.5, innerHeight * 0.5),
+  motion: new THREE.Vector2(),
+  roll: 0,
+  radius: 80,
+  radiusVelocity: 0,
+  held: false,
+  pressedUntil: 0,
 };
 
-let baseRadius = 130;
+let restingRadius = 80;
+let expandedRadius = 130;
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.getDrawingBufferSize(uniforms.uResolution.value);
   artCanvas.width = uniforms.uResolution.value.x;
   artCanvas.height = uniforms.uResolution.value.y;
-  baseRadius = THREE.MathUtils.clamp(Math.min(innerWidth, innerHeight) * 0.145, 88, 150);
+  restingRadius = THREE.MathUtils.clamp(Math.min(innerWidth, innerHeight) * 0.085, 58, 92);
+  expandedRadius = THREE.MathUtils.clamp(Math.min(innerWidth, innerHeight) * 0.145, 88, 150);
+  if (!Number.isFinite(lens.radius)) lens.radius = restingRadius;
   drawArt();
 }
 
@@ -287,20 +312,57 @@ addEventListener("resize", resize);
 resize();
 
 function moveLens(event) {
+  lens.previous.copy(lens.position);
   lens.position.set(event.clientX, event.clientY);
+  const movement = lens.position.clone().sub(lens.previous);
+  if (movement.lengthSq() > 0) {
+    lens.roll += (movement.x - movement.y) / Math.max(expandedRadius, 1) * 0.85;
+    lens.motion.set(movement.x, -movement.y).multiplyScalar(0.055).clampLength(0, 1);
+  }
 }
 
 addEventListener("pointermove", moveLens, { passive: true });
-addEventListener("pointerdown", moveLens, { passive: true });
+addEventListener(
+  "pointerdown",
+  (event) => {
+    moveLens(event);
+    lens.held = true;
+    lens.pressedUntil = performance.now() + 320;
+  },
+  { passive: true },
+);
+addEventListener(
+  "pointerup",
+  () => {
+    lens.held = false;
+  },
+  { passive: true },
+);
+addEventListener(
+  "pointercancel",
+  () => {
+    lens.held = false;
+  },
+  { passive: true },
+);
 
 function render() {
+  const expanded = lens.held || performance.now() < lens.pressedUntil;
+  const radiusTarget = expanded ? expandedRadius : restingRadius;
+  const radiusForce = (radiusTarget - lens.radius) * 0.12;
+  lens.radiusVelocity = (lens.radiusVelocity + radiusForce) * 0.72;
+  lens.radius += lens.radiusVelocity;
+  lens.motion.multiplyScalar(0.91);
+
   const pixelRatio = renderer.getPixelRatio();
   uniforms.uLens.value.set(
     lens.position.x * pixelRatio,
     (innerHeight - lens.position.y) * pixelRatio,
   );
-  uniforms.uRadius.value = baseRadius * pixelRatio;
+  uniforms.uRadius.value = lens.radius * pixelRatio;
   uniforms.uTime.value = performance.now() * 0.001;
+  uniforms.uRoll.value = lens.roll;
+  uniforms.uMotion.value.copy(lens.motion);
 
   renderer.render(scene, camera);
   requestAnimationFrame(render);
