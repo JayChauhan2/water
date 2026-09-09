@@ -24,4 +24,6 @@ dispersion, Schlick Fresnel reflection, wavelength-selective absorption,
 flowing caustics, continuously moving surface normals, and a point light fixed
 to the center of the viewport. Pointer movement rolls the internal optical
 surface, while pressing smoothly expands the lens and releasing contracts it.
-Built with Vite, Three.js, Canvas 2D, and custom GLSL.
+Volumetric path length, environment reflection, body shading, and a
+light-relative cast shadow give the orb its depth. Built with Vite, Three.js,
+Canvas 2D, and custom GLSL.

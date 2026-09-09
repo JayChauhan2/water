@@ -72,11 +72,21 @@ const material = new THREE.ShaderMaterial({
       vec3 background = texture2D(uArt, vUv).rgb;
       vec3 color = background;
 
-      float shadowShape = 1.0 - smoothstep(1.0, 1.30, distanceToLens);
+      vec2 lightPosition = uResolution * 0.5;
+      vec2 awayFromLight = uLens - lightPosition;
+      float awayLength = length(awayFromLight);
+      awayFromLight /= max(awayLength, 0.001);
+      vec2 shadowCenter = uLens + awayFromLight * uRadius * 0.12;
+      vec2 shadowQ = (frag - shadowCenter) / uRadius;
+      float shadowDistance = length(vec2(shadowQ.x, shadowQ.y * 0.92));
+      float castShadow = (1.0 - smoothstep(0.92, 1.42, shadowDistance))
+        * smoothstep(1.01, 1.10, distanceToLens);
+      float shadowShape = 1.0 - smoothstep(1.0, 1.24, distanceToLens);
       float lensMask = 1.0 - smoothstep(0.985, 1.008, distanceToLens);
       float outsideShadow = max(0.0, shadowShape - lensMask);
       float shadowDirection = smoothstep(-0.7, 0.8, q.y - q.x * 0.35);
-      color *= 1.0 - outsideShadow * mix(0.075, 0.018, shadowDirection);
+      color *= 1.0 - castShadow * 0.085;
+      color *= 1.0 - outsideShadow * mix(0.10, 0.025, shadowDirection);
 
       if (distanceToLens < 1.02) {
         float safeDistance = min(distanceToLens, 0.999);
@@ -94,7 +104,8 @@ const material = new THREE.ShaderMaterial({
         float opticalBevel = smoothstep(0.42, 0.96, distanceToLens);
 
         vec2 centerUv = uLens / uResolution;
-        vec2 magnifiedUv = centerUv + (vUv - centerUv) * 0.975;
+        float volumeMagnification = mix(0.958, 0.985, opticalBevel);
+        vec2 magnifiedUv = centerUv + (vUv - centerUv) * volumeMagnification;
         vec2 baseRefraction = refractedUv(magnifiedUv, normal, 1.5, opticalBevel);
 
         // Wavelength-dependent bending becomes visible only through the bevel.
@@ -109,9 +120,9 @@ const material = new THREE.ShaderMaterial({
           texture2D(uArt, uvBlue).b
         );
 
-        // Mild wavelength-selective absorption gives thick glass its green body tint.
-        float pathLength = mix(1.25, 0.18, opticalBevel);
-        glass *= exp(-vec3(0.012, 0.003, 0.009) * pathLength);
+        // The sphere's depth controls its optical path through the material.
+        float pathLength = domeHeight * 2.0 + 0.08;
+        glass *= exp(-vec3(0.020, 0.005, 0.014) * pathLength);
 
         vec3 viewDirection = vec3(0.0, 0.0, 1.0);
         float cosTheta = clamp(dot(normal, viewDirection), 0.0, 1.0);
@@ -120,7 +131,6 @@ const material = new THREE.ShaderMaterial({
 
         // A single point light sits in front of the exact page center.
         // Its screen-relative direction changes as the lens moves around it.
-        vec2 lightPosition = uResolution * 0.5;
         float lightHeight = min(uResolution.x, uResolution.y) * 0.72;
         vec3 lightDirection = normalize(vec3(lightPosition - frag, lightHeight));
         vec3 halfVector = normalize(lightDirection + viewDirection);
@@ -134,9 +144,23 @@ const material = new THREE.ShaderMaterial({
           smoothstep(0.42, 0.78, luma)
         );
 
-        glass = mix(glass, adaptiveReflection, fresnel * 0.13);
+        vec3 reflectedRay = reflect(-viewDirection, normal);
+        vec3 environmentLow = vec3(1.0, 0.88, 0.72);
+        vec3 environmentHigh = vec3(0.56, 0.76, 1.0);
+        vec3 environment = mix(
+          environmentLow,
+          environmentHigh,
+          smoothstep(-0.65, 0.85, reflectedRay.y)
+        );
+        float environmentSun = pow(max(dot(reflectedRay, lightDirection), 0.0), 96.0);
+        environment += vec3(1.0, 0.94, 0.76) * environmentSun * 0.8;
+
+        glass = mix(glass, environment, fresnel * 0.34);
+        float bodyLight = dot(normal, lightDirection) * 0.5 + 0.5;
+        glass += vec3(0.72, 0.88, 1.0) * bodyLight * domeHeight * 0.018;
+        glass -= vec3(0.10, 0.12, 0.16) * (1.0 - bodyLight) * domeHeight * 0.025;
         glass += vec3(1.0, 0.985, 0.94) * specular * 0.68;
-        glass += vec3(0.62, 0.78, 1.0) * broadSpecular * 0.035;
+        glass += vec3(0.62, 0.78, 1.0) * broadSpecular * 0.055;
 
         float innerCaustic = smoothstep(0.70, 0.94, distanceToLens)
           * (1.0 - smoothstep(0.94, 1.0, distanceToLens));
@@ -166,7 +190,8 @@ const material = new THREE.ShaderMaterial({
           * rollingGlint * innerCaustic * motionAmount * 0.12;
 
         float rim = smoothstep(0.88, 1.0, distanceToLens);
-        glass = mix(glass, adaptiveReflection, rim * fresnel * 0.18);
+        vec3 farRim = mix(vec3(0.20, 0.30, 0.42), environment, litSide);
+        glass = mix(glass, farRim, rim * fresnel * 0.42);
         color = mix(color, glass, lensMask);
       }
 
