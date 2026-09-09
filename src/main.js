@@ -112,11 +112,11 @@ const material = new THREE.ShaderMaterial({
         float f0 = pow((1.5 - 1.0) / (1.5 + 1.0), 2.0);
         float fresnel = f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
 
-        vec3 lightDirection = normalize(vec3(
-          -0.58 + sin(uTime * 0.19) * 0.035,
-          0.72 + cos(uTime * 0.16) * 0.025,
-          1.0
-        ));
+        // A single point light sits in front of the exact page center.
+        // Its screen-relative direction changes as the lens moves around it.
+        vec2 lightPosition = uResolution * 0.5;
+        float lightHeight = min(uResolution.x, uResolution.y) * 0.72;
+        vec3 lightDirection = normalize(vec3(lightPosition - frag, lightHeight));
         vec3 halfVector = normalize(lightDirection + viewDirection);
         float specular = pow(max(dot(normal, halfVector), 0.0), 82.0);
         float broadSpecular = pow(max(dot(normal, halfVector), 0.0), 12.0);
@@ -134,7 +134,15 @@ const material = new THREE.ShaderMaterial({
 
         float innerCaustic = smoothstep(0.70, 0.94, distanceToLens)
           * (1.0 - smoothstep(0.94, 1.0, distanceToLens));
-        float litSide = smoothstep(-0.65, 0.9, dot(normal.xy, normalize(vec2(-0.6, 0.8))));
+        vec2 planarLight = lightPosition - uLens;
+        float planarDistance = length(planarLight);
+        vec2 lightAcrossGlass = planarLight / max(planarDistance, 0.001);
+        float directionalLight = smoothstep(-0.65, 0.9, dot(normal.xy, lightAcrossGlass));
+        float litSide = mix(
+          0.5,
+          directionalLight,
+          smoothstep(0.0, uRadius * 0.8, planarDistance)
+        );
         float flowingCaustic = 0.72 + 0.28 * sin(angle * 4.0 - uTime * 0.62);
         glass += vec3(0.82, 0.94, 1.0)
           * innerCaustic * litSide * flowingCaustic * 0.15;
