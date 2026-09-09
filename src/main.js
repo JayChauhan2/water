@@ -17,7 +17,6 @@ renderer.setClearColor(0xffffff, 1);
 
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-const clock = new THREE.Clock();
 const artCanvas = document.createElement("canvas");
 const artContext = artCanvas.getContext("2d");
 const artTexture = new THREE.CanvasTexture(artCanvas);
@@ -30,10 +29,6 @@ const uniforms = {
   uResolution: { value: new THREE.Vector2() },
   uLens: { value: new THREE.Vector2() },
   uRadius: { value: 130 },
-  uStretch: { value: 0 },
-  uAngle: { value: 0 },
-  uWobble: { value: 0 },
-  uTime: { value: 0 },
 };
 
 const material = new THREE.ShaderMaterial({
@@ -54,16 +49,6 @@ const material = new THREE.ShaderMaterial({
     uniform vec2 uResolution;
     uniform vec2 uLens;
     uniform float uRadius;
-    uniform float uStretch;
-    uniform float uAngle;
-    uniform float uWobble;
-    uniform float uTime;
-
-    mat2 rotate2d(float angle) {
-      float c = cos(angle);
-      float s = sin(angle);
-      return mat2(c, -s, s, c);
-    }
 
     vec3 refractedSample(vec2 uv, vec3 normal, float ior, float bevel) {
       vec3 incident = vec3(0.0, 0.0, -1.0);
@@ -75,15 +60,8 @@ const material = new THREE.ShaderMaterial({
     void main() {
       vec2 frag = gl_FragCoord.xy;
       vec2 deltaPx = frag - uLens;
-      vec2 local = rotate2d(-uAngle) * deltaPx;
-      local.x /= 1.0 + uStretch;
-      local.y /= 1.0 - uStretch * 0.34;
-
-      vec2 q = local / uRadius;
-      float theta = atan(q.y, q.x);
-      float liquidEdge = sin(theta * 3.0 + uTime * 3.8) * uWobble * 0.026;
-      liquidEdge += sin(theta * 5.0 - uTime * 2.3) * uWobble * 0.012;
-      float distanceToLens = length(q) + liquidEdge;
+      vec2 q = deltaPx / uRadius;
+      float distanceToLens = length(q);
 
       vec3 background = texture2D(uArt, vUv).rgb;
       vec3 color = background;
@@ -183,23 +161,6 @@ function drawArt() {
   c.fillStyle = palette.paper;
   c.fillRect(0, 0, width, height);
 
-  c.strokeStyle = palette.quiet;
-  c.lineWidth = Math.max(1, unit * 0.001);
-  c.globalAlpha = 0.48;
-  [0.19, 0.52, 0.83].forEach((x) => {
-    c.beginPath();
-    c.moveTo(width * x, 0);
-    c.lineTo(width * x, height);
-    c.stroke();
-  });
-  [0.28, 0.62, 0.88].forEach((y) => {
-    c.beginPath();
-    c.moveTo(0, height * y);
-    c.lineTo(width, height * y);
-    c.stroke();
-  });
-  c.globalAlpha = 1;
-
   c.fillStyle = palette.yellow;
   c.beginPath();
   c.arc(width * 0.83, height * 0.22, unit * 0.108, 0, Math.PI * 2);
@@ -272,11 +233,6 @@ function drawArt() {
 
 const lens = {
   position: new THREE.Vector2(innerWidth * 0.5, innerHeight * 0.5),
-  target: new THREE.Vector2(innerWidth * 0.5, innerHeight * 0.5),
-  velocity: new THREE.Vector2(),
-  angle: 0,
-  stretch: 0,
-  wobble: 0,
 };
 
 let baseRadius = 130;
@@ -294,46 +250,19 @@ addEventListener("resize", resize);
 resize();
 
 function moveLens(event) {
-  lens.target.set(event.clientX, event.clientY);
+  lens.position.set(event.clientX, event.clientY);
 }
 
 addEventListener("pointermove", moveLens, { passive: true });
-addEventListener(
-  "pointerdown",
-  (event) => {
-    moveLens(event);
-    lens.wobble = Math.min(0.5, lens.wobble + 0.35);
-  },
-  { passive: true },
-);
+addEventListener("pointerdown", moveLens, { passive: true });
 
 function render() {
-  const delta = Math.min(clock.getDelta(), 0.034) * 60;
-  const spring = lens.target.clone().sub(lens.position).multiplyScalar(0.24 * delta);
-  lens.velocity.add(spring);
-  lens.velocity.multiplyScalar(Math.pow(0.62, delta));
-  lens.position.addScaledVector(lens.velocity, delta);
-
-  const speed = lens.velocity.length();
-  if (speed > 0.05) lens.angle = Math.atan2(-lens.velocity.y, lens.velocity.x);
-  lens.stretch = THREE.MathUtils.lerp(
-    lens.stretch,
-    THREE.MathUtils.clamp(speed / 110, 0, 0.075),
-    0.18,
-  );
-  lens.wobble *= Math.pow(0.955, delta);
-
   const pixelRatio = renderer.getPixelRatio();
   uniforms.uLens.value.set(
     lens.position.x * pixelRatio,
     (innerHeight - lens.position.y) * pixelRatio,
   );
-  uniforms.uRadius.value =
-    (baseRadius + Math.sin(clock.elapsedTime * 8.0) * lens.wobble * 4.0) * pixelRatio;
-  uniforms.uStretch.value = lens.stretch;
-  uniforms.uAngle.value = lens.angle;
-  uniforms.uWobble.value = lens.wobble;
-  uniforms.uTime.value = clock.elapsedTime;
+  uniforms.uRadius.value = baseRadius * pixelRatio;
 
   renderer.render(scene, camera);
   requestAnimationFrame(render);

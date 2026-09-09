@@ -19,6 +19,6 @@ Create a production build with `npm run build`.
 - Interface typography and responsive layout: `src/styles.css`
 - Canvas artwork, spring motion, and glass shader: `src/main.js`
 
-The lens uses spherical normals, index-of-refraction offsets, RGB dispersion,
-Schlick Fresnel reflection, adaptive highlights, and spring-based deformation.
-Built with Vite, Three.js, Canvas 2D, and custom GLSL.
+The stable circular lens uses spherical normals, index-of-refraction offsets,
+RGB dispersion, Schlick Fresnel reflection, and adaptive highlights. Built
+with Vite, Three.js, Canvas 2D, and custom GLSL.
