@@ -205,9 +205,93 @@ const material = new THREE.ShaderMaterial({
   `,
 });
 
+const residueCanvas = document.createElement("canvas");
+const residueContext = residueCanvas.getContext("2d");
+const residueBuffer = document.createElement("canvas");
+const residueBufferContext = residueBuffer.getContext("2d");
+const residueTexture = new THREE.CanvasTexture(residueCanvas);
+residueTexture.colorSpace = THREE.NoColorSpace;
+residueTexture.minFilter = THREE.LinearFilter;
+residueTexture.magFilter = THREE.LinearFilter;
+
+const residueUniforms = {
+  uArt: { value: artTexture },
+  uResidue: { value: residueTexture },
+  uTexel: { value: new THREE.Vector2(1 / 512, 1 / 288) },
+  uResolution: { value: new THREE.Vector2(innerWidth, innerHeight) },
+};
+
+const residueMaterial = new THREE.ShaderMaterial({
+  uniforms: residueUniforms,
+  toneMapped: false,
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    precision highp float;
+
+    varying vec2 vUv;
+    uniform sampler2D uArt;
+    uniform sampler2D uResidue;
+    uniform vec2 uTexel;
+    uniform vec2 uResolution;
+
+    void main() {
+      vec3 base = texture2D(uArt, vUv).rgb;
+      float height = texture2D(uResidue, vUv).r;
+
+      if (height < 0.003) {
+        gl_FragColor = vec4(base, 1.0);
+        return;
+      }
+
+      float leftHeight = texture2D(uResidue, vUv - vec2(uTexel.x, 0.0)).r;
+      float rightHeight = texture2D(uResidue, vUv + vec2(uTexel.x, 0.0)).r;
+      float lowerHeight = texture2D(uResidue, vUv - vec2(0.0, uTexel.y)).r;
+      float upperHeight = texture2D(uResidue, vUv + vec2(0.0, uTexel.y)).r;
+      vec2 gradient = vec2(rightHeight - leftHeight, upperHeight - lowerHeight);
+      vec3 normal = normalize(vec3(-gradient * 9.0, 0.34));
+
+      float waterMask = smoothstep(0.006, 0.055, height);
+      float edge = smoothstep(0.015, 0.16, length(gradient));
+      vec2 refractedUv = clamp(
+        vUv + normal.xy * 0.018 * waterMask,
+        vec2(0.002),
+        vec2(0.998)
+      );
+
+      vec2 spectralDirection = normalize(normal.xy + vec2(0.0001));
+      vec2 spectralShift = spectralDirection * (2.4 / uResolution) * edge;
+      vec3 water = vec3(
+        texture2D(uArt, refractedUv - spectralShift).r,
+        texture2D(uArt, refractedUv).g,
+        texture2D(uArt, refractedUv + spectralShift).b
+      );
+
+      vec2 lightDelta = vec2(0.5) - vUv;
+      lightDelta.x *= uResolution.x / max(uResolution.y, 1.0);
+      vec3 lightDirection = normalize(vec3(lightDelta, 0.72));
+      vec3 viewDirection = vec3(0.0, 0.0, 1.0);
+      vec3 halfVector = normalize(lightDirection + viewDirection);
+      float specular = pow(max(dot(normal, halfVector), 0.0), 72.0);
+      float fresnel = 0.02 + 0.98 * pow(1.0 - max(normal.z, 0.0), 5.0);
+
+      water = mix(water, vec3(0.55, 0.90, 1.0), waterMask * 0.07);
+      water += vec3(0.78, 0.94, 1.0) * specular * waterMask * 0.42;
+      water = mix(water, vec3(0.72, 0.90, 1.0), fresnel * edge * 0.34);
+
+      gl_FragColor = vec4(mix(base, water, waterMask), 1.0);
+    }
+  `,
+});
+
 const backdrop = new THREE.Mesh(
   new THREE.PlaneGeometry(2, 2),
-  new THREE.MeshBasicMaterial({ map: artTexture, toneMapped: false }),
+  residueMaterial,
 );
 backdrop.position.z = -1.4;
 scene.add(backdrop);
@@ -619,6 +703,103 @@ const lens = {
   pressedUntil: 0,
 };
 
+const residue = {
+  dwellTime: 0,
+  timeSinceDeposit: 0,
+  lastFlowTime: initialTime,
+  dirty: false,
+};
+const depositDirection = new THREE.Vector2();
+const depositPerpendicular = new THREE.Vector2();
+
+function stampWater(position, radiusCss, opacity, offsetX = 0, offsetY = 0) {
+  const scaleX = residueCanvas.width / innerWidth;
+  const scaleY = residueCanvas.height / innerHeight;
+  const x = (position.x + offsetX) * scaleX;
+  const y = (position.y + offsetY) * scaleY;
+  const radius = Math.max(1, radiusCss * (scaleX + scaleY) * 0.5);
+  const gradient = residueContext.createRadialGradient(x, y, 0, x, y, radius);
+  gradient.addColorStop(0, `rgba(255, 255, 255, ${opacity})`);
+  gradient.addColorStop(0.56, `rgba(255, 255, 255, ${opacity * 0.82})`);
+  gradient.addColorStop(0.82, `rgba(255, 255, 255, ${opacity * 0.38})`);
+  gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+  residueContext.fillStyle = gradient;
+  residueContext.beginPath();
+  residueContext.arc(x, y, radius, 0, Math.PI * 2);
+  residueContext.fill();
+  residue.dirty = true;
+}
+
+function depositWater(deltaSeconds) {
+  const speed = lens.motion.length();
+  residue.timeSinceDeposit += deltaSeconds;
+
+  if (speed < 0.065) {
+    residue.dwellTime = Math.min(residue.dwellTime + deltaSeconds, 4);
+  } else {
+    residue.dwellTime = Math.max(0, residue.dwellTime - deltaSeconds * 2.4);
+  }
+
+  const interval = speed > 0.42 ? 0.095 : speed > 0.14 ? 0.042 : 1 / 60;
+  if (residue.timeSinceDeposit < interval) return;
+  residue.timeSinceDeposit %= interval;
+
+  if (speed > 0.42) {
+    depositDirection
+      .set(lens.motion.x, -lens.motion.y)
+      .normalize();
+    depositPerpendicular.set(-depositDirection.y, depositDirection.x);
+    const behind = 7 + Math.random() * 15;
+    const side = (Math.random() - 0.5) * 13;
+    stampWater(
+      lens.position,
+      2.4 + Math.random() * 3.4,
+      0.42,
+      -depositDirection.x * behind + depositPerpendicular.x * side,
+      -depositDirection.y * behind + depositPerpendicular.y * side,
+    );
+    return;
+  }
+
+  if (speed > 0.14) {
+    const side = (Math.random() - 0.5) * 7;
+    stampWater(lens.position, 4 + Math.random() * 4, 0.24, side, -side * 0.45);
+    return;
+  }
+
+  const poolRadius = 8 + Math.min(residue.dwellTime * 16, 55);
+  const drift = Math.min(residue.dwellTime * 4.2, 16);
+  stampWater(
+    lens.position,
+    poolRadius,
+    0.035 + Math.min(residue.dwellTime * 0.005, 0.02),
+    (Math.random() - 0.5) * drift,
+    (Math.random() - 0.5) * drift,
+  );
+}
+
+function flowAndEvaporateResidue(now) {
+  const elapsed = (now - residue.lastFlowTime) / 1000;
+  if (elapsed < 1 / 15) return;
+  residue.lastFlowTime = now;
+
+  residueBufferContext.clearRect(0, 0, residueBuffer.width, residueBuffer.height);
+  residueBufferContext.save();
+  residueBufferContext.filter = "blur(0.35px)";
+  residueBufferContext.drawImage(
+    residueCanvas,
+    0,
+    Math.min(elapsed * 1.2, 0.25),
+  );
+  residueBufferContext.restore();
+
+  residueContext.clearRect(0, 0, residueCanvas.width, residueCanvas.height);
+  residueContext.drawImage(residueBuffer, 0, 0);
+  residueContext.fillStyle = `rgba(0, 0, 0, ${Math.min(elapsed * 0.018, 0.01)})`;
+  residueContext.fillRect(0, 0, residueCanvas.width, residueCanvas.height);
+  residue.dirty = true;
+}
+
 let simulationTime = initialTime - INPUT_DELAY_MS;
 let lastRenderTime = initialTime;
 
@@ -637,6 +818,17 @@ function resize() {
   backdrop.scale.set(aspect, 1, 1);
   artCanvas.width = uniforms.uResolution.value.x;
   artCanvas.height = uniforms.uResolution.value.y;
+  const residueWidth = matchMedia("(pointer: coarse)").matches ? 320 : 512;
+  const residueHeight = Math.max(1, Math.round(residueWidth / aspect));
+  residueCanvas.width = residueWidth;
+  residueCanvas.height = residueHeight;
+  residueBuffer.width = residueWidth;
+  residueBuffer.height = residueHeight;
+  residueContext.fillStyle = "#000";
+  residueContext.fillRect(0, 0, residueWidth, residueHeight);
+  residueUniforms.uTexel.value.set(1 / residueWidth, 1 / residueHeight);
+  residueUniforms.uResolution.value.set(innerWidth, innerHeight);
+  residueTexture.needsUpdate = true;
   restingRadius = THREE.MathUtils.clamp(Math.min(innerWidth, innerHeight) * 0.085, 58, 92);
   expandedRadius = THREE.MathUtils.clamp(Math.min(innerWidth, innerHeight) * 0.145, 88, 150);
   if (!Number.isFinite(lens.radius)) lens.radius = restingRadius;
@@ -723,6 +915,7 @@ function updatePhysics(stepTime) {
     glassOrb.rotation.x += lens.movement.y / Math.max(lens.radius, 1);
   }
   lens.wobbleEnergy *= Math.exp(-deltaSeconds * 1.15);
+  depositWater(deltaSeconds);
 
   const expanded = lens.held || stepTime < lens.pressedUntil;
   const radiusTarget = expanded ? expandedRadius : restingRadius;
@@ -739,6 +932,7 @@ function render() {
   const now = performance.now();
   const frameSeconds = Math.min((now - lastRenderTime) / 1000, 0.05);
   lastRenderTime = now;
+  flowAndEvaporateResidue(now);
   const targetSimulationTime = now - INPUT_DELAY_MS;
   let updates = 0;
 
@@ -800,6 +994,10 @@ function render() {
   deformation.wobble.value = renderWobble;
   deformation.time.value = now * 0.001;
   uniforms.uRoll.value = renderRoll;
+  if (residue.dirty) {
+    residueTexture.needsUpdate = true;
+    residue.dirty = false;
+  }
 
   renderer.render(scene, camera);
   requestAnimationFrame(render);
