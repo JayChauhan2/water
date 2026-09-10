@@ -17,6 +17,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setClearColor(0xffffff, 1);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
+renderer.transmissionResolutionScale = 0.65;
 
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
@@ -343,7 +344,7 @@ glassMaterial.onBeforeCompile = (shader) => {
 glassMaterial.customProgramCacheKey = () => "directional-liquid-deformation-v1";
 
 const glassOrb = new THREE.Mesh(
-  new THREE.SphereGeometry(1, 128, 96),
+  new THREE.SphereGeometry(1, 96, 64),
   glassMaterial,
 );
 glassOrb.position.z = 0;
@@ -495,21 +496,131 @@ function drawArt() {
   artTexture.needsUpdate = true;
 }
 
+class OneEuroVector {
+  constructor(minCutoff, beta, derivativeCutoff) {
+    this.minCutoff = minCutoff;
+    this.beta = beta;
+    this.derivativeCutoff = derivativeCutoff;
+    this.initialized = false;
+    this.raw = new THREE.Vector2();
+    this.filtered = new THREE.Vector2();
+    this.derivative = new THREE.Vector2();
+    this.measuredDerivative = new THREE.Vector2();
+  }
+
+  smoothing(cutoff, deltaSeconds) {
+    const timeConstant = 1 / (Math.PI * 2 * cutoff);
+    return 1 / (1 + timeConstant / deltaSeconds);
+  }
+
+  filter(value, deltaSeconds) {
+    if (!this.initialized) {
+      this.raw.copy(value);
+      this.filtered.copy(value);
+      this.initialized = true;
+      return this.filtered;
+    }
+
+    this.measuredDerivative
+      .subVectors(value, this.raw)
+      .multiplyScalar(1 / deltaSeconds);
+    this.derivative.lerp(
+      this.measuredDerivative,
+      this.smoothing(this.derivativeCutoff, deltaSeconds),
+    );
+    const cutoff = this.minCutoff + this.beta * this.derivative.length();
+    this.filtered.lerp(value, this.smoothing(cutoff, deltaSeconds));
+    this.raw.copy(value);
+    return this.filtered;
+  }
+}
+
+const INPUT_CAPACITY = 128;
+const INPUT_DELAY_MS = 12;
+const FIXED_STEP_MS = 1000 / 120;
+const inputX = new Float64Array(INPUT_CAPACITY);
+const inputY = new Float64Array(INPUT_CAPACITY);
+const inputTime = new Float64Array(INPUT_CAPACITY);
+let inputWrite = 0;
+let inputCount = 0;
+
+function addPointerSample(x, y, time) {
+  inputX[inputWrite] = x;
+  inputY[inputWrite] = y;
+  inputTime[inputWrite] = time;
+  inputWrite = (inputWrite + 1) % INPUT_CAPACITY;
+  inputCount = Math.min(inputCount + 1, INPUT_CAPACITY);
+}
+
+function normalizedEventTime(event) {
+  const eventTime = event.timeStamp;
+  return Math.abs(eventTime - performance.now()) < 60000
+    ? eventTime
+    : performance.now();
+}
+
+function samplePointerAt(time, output) {
+  if (inputCount === 0) return output;
+
+  const oldest = (inputWrite - inputCount + INPUT_CAPACITY) % INPUT_CAPACITY;
+  let previousIndex = oldest;
+
+  for (let offset = 1; offset < inputCount; offset++) {
+    const currentIndex = (oldest + offset) % INPUT_CAPACITY;
+    if (inputTime[currentIndex] >= time) {
+      const duration = Math.max(inputTime[currentIndex] - inputTime[previousIndex], 0.001);
+      const progress = THREE.MathUtils.clamp(
+        (time - inputTime[previousIndex]) / duration,
+        0,
+        1,
+      );
+      output.set(
+        THREE.MathUtils.lerp(inputX[previousIndex], inputX[currentIndex], progress),
+        THREE.MathUtils.lerp(inputY[previousIndex], inputY[currentIndex], progress),
+      );
+      return output;
+    }
+    previousIndex = currentIndex;
+  }
+
+  output.set(inputX[previousIndex], inputY[previousIndex]);
+  return output;
+}
+
+const initialTime = performance.now();
+const initialPosition = new THREE.Vector2(innerWidth * 0.5, innerHeight * 0.5);
+addPointerSample(initialPosition.x, initialPosition.y, initialTime - INPUT_DELAY_MS);
+
 const lens = {
-  position: new THREE.Vector2(innerWidth * 0.5, innerHeight * 0.5),
-  previous: new THREE.Vector2(innerWidth * 0.5, innerHeight * 0.5),
+  position: initialPosition.clone(),
+  previousPosition: initialPosition.clone(),
+  renderPosition: initialPosition.clone(),
+  sampledPosition: initialPosition.clone(),
+  movement: new THREE.Vector2(),
+  measuredVelocity: new THREE.Vector2(),
   motion: new THREE.Vector2(),
-  motionTarget: new THREE.Vector2(),
+  previousMotion: new THREE.Vector2(),
+  renderMotion: new THREE.Vector2(),
+  rawAcceleration: new THREE.Vector2(),
   acceleration: new THREE.Vector2(),
+  previousAcceleration: new THREE.Vector2(),
+  renderAcceleration: new THREE.Vector2(),
+  velocityFilter: new OneEuroVector(2.2, 0.065, 1.5),
+  accelerationFilter: new OneEuroVector(1.7, 0.045, 1.2),
   roll: 0,
+  previousRoll: 0,
   wobbleEnergy: 0,
-  lastMoveAt: performance.now(),
-  lastFrameAt: performance.now(),
+  previousWobbleEnergy: 0,
   radius: 80,
+  previousRadius: 80,
+  renderRadius: 80,
   radiusVelocity: 0,
   held: false,
   pressedUntil: 0,
 };
+
+let simulationTime = initialTime - INPUT_DELAY_MS;
+let lastRenderTime = initialTime;
 
 let restingRadius = 80;
 let expandedRadius = 130;
@@ -535,37 +646,23 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-function moveLens(event) {
-  const now = performance.now();
-  const elapsed = Math.max((now - lens.lastMoveAt) / 1000, 1 / 240);
-  lens.previous.copy(lens.position);
-  lens.position.set(event.clientX, event.clientY);
-  const movement = lens.position.clone().sub(lens.previous);
-  if (movement.lengthSq() > 0) {
-    const measuredVelocity = movement
-      .clone()
-      .set(movement.x, -movement.y)
-      .multiplyScalar(1 / elapsed / 1800)
-      .clampLength(0, 1);
-    const velocityChange = measuredVelocity.clone().sub(lens.motionTarget);
-    lens.acceleration.lerp(velocityChange, 0.62).clampLength(0, 1);
-    lens.motionTarget.lerp(measuredVelocity, 0.72);
-    lens.roll += (movement.x - movement.y) / Math.max(expandedRadius, 1) * 0.85;
-    lens.wobbleEnergy = Math.min(
-      1,
-      lens.wobbleEnergy + movement.length() / 360 + velocityChange.length() * 0.16,
+function queuePointer(event) {
+  const samples = event.getCoalescedEvents?.() ?? [];
+  const events = samples.length > 0 ? samples : [event];
+  for (const sample of events) {
+    addPointerSample(
+      sample.clientX,
+      sample.clientY,
+      normalizedEventTime(sample),
     );
-    glassOrb.rotation.y += movement.x / Math.max(lens.radius, 1);
-    glassOrb.rotation.x += movement.y / Math.max(lens.radius, 1);
   }
-  lens.lastMoveAt = now;
 }
 
-addEventListener("pointermove", moveLens, { passive: true });
+addEventListener("pointermove", queuePointer, { passive: true });
 addEventListener(
   "pointerdown",
   (event) => {
-    moveLens(event);
+    queuePointer(event);
     lens.held = true;
     lens.pressedUntil = performance.now() + 320;
   },
@@ -586,33 +683,123 @@ addEventListener(
   { passive: true },
 );
 
-function render() {
-  const now = performance.now();
-  const deltaSeconds = Math.min((now - lens.lastFrameAt) / 1000, 0.05);
-  lens.lastFrameAt = now;
-  const expanded = lens.held || now < lens.pressedUntil;
-  const radiusTarget = expanded ? expandedRadius : restingRadius;
-  const radiusForce = (radiusTarget - lens.radius) * 0.12;
-  lens.radiusVelocity = (lens.radiusVelocity + radiusForce) * 0.72;
-  lens.radius += lens.radiusVelocity;
-  const motionFollow = 1 - Math.exp(-deltaSeconds * 14);
-  lens.motion.lerp(lens.motionTarget, motionFollow);
-  lens.motionTarget.multiplyScalar(Math.exp(-deltaSeconds * 3.8));
-  lens.acceleration.multiplyScalar(Math.exp(-deltaSeconds * 3.4));
+function updatePhysics(stepTime) {
+  const deltaSeconds = FIXED_STEP_MS / 1000;
+  lens.previousPosition.copy(lens.position);
+  lens.previousMotion.copy(lens.motion);
+  lens.previousAcceleration.copy(lens.acceleration);
+  lens.previousRadius = lens.radius;
+  lens.previousRoll = lens.roll;
+  lens.previousWobbleEnergy = lens.wobbleEnergy;
+
+  samplePointerAt(stepTime, lens.sampledPosition);
+  lens.movement.subVectors(lens.sampledPosition, lens.position);
+  lens.position.copy(lens.sampledPosition);
+
+  lens.measuredVelocity
+    .set(lens.movement.x, -lens.movement.y)
+    .multiplyScalar(1 / deltaSeconds / 1800)
+    .clampLength(0, 1);
+  lens.motion.copy(lens.velocityFilter.filter(lens.measuredVelocity, deltaSeconds));
+
+  lens.rawAcceleration
+    .subVectors(lens.motion, lens.previousMotion)
+    .multiplyScalar(1 / deltaSeconds / 12)
+    .clampLength(0, 1);
+  lens.acceleration.copy(
+    lens.accelerationFilter.filter(lens.rawAcceleration, deltaSeconds),
+  );
+
+  if (lens.movement.lengthSq() > 0.0001) {
+    lens.roll +=
+      (lens.movement.x - lens.movement.y) / Math.max(expandedRadius, 1) * 0.85;
+    lens.wobbleEnergy = Math.min(
+      1,
+      lens.wobbleEnergy +
+        lens.movement.length() / 360 +
+        lens.acceleration.length() * 0.012,
+    );
+    glassOrb.rotation.y += lens.movement.x / Math.max(lens.radius, 1);
+    glassOrb.rotation.x += lens.movement.y / Math.max(lens.radius, 1);
+  }
   lens.wobbleEnergy *= Math.exp(-deltaSeconds * 1.15);
 
+  const expanded = lens.held || stepTime < lens.pressedUntil;
+  const radiusTarget = expanded ? expandedRadius : restingRadius;
+  const angularFrequency = 13;
+  const dampingRatio = 0.82;
+  const radiusAcceleration =
+    angularFrequency * angularFrequency * (radiusTarget - lens.radius) -
+    2 * dampingRatio * angularFrequency * lens.radiusVelocity;
+  lens.radiusVelocity += radiusAcceleration * deltaSeconds;
+  lens.radius += lens.radiusVelocity * deltaSeconds;
+}
+
+function render() {
+  const now = performance.now();
+  const frameSeconds = Math.min((now - lastRenderTime) / 1000, 0.05);
+  lastRenderTime = now;
+  const targetSimulationTime = now - INPUT_DELAY_MS;
+  let updates = 0;
+
+  while (
+    simulationTime + FIXED_STEP_MS <= targetSimulationTime &&
+    updates < 12
+  ) {
+    simulationTime += FIXED_STEP_MS;
+    updatePhysics(simulationTime);
+    updates++;
+  }
+
+  if (targetSimulationTime - simulationTime > FIXED_STEP_MS * 12) {
+    simulationTime = targetSimulationTime - FIXED_STEP_MS;
+  }
+
+  const interpolation = THREE.MathUtils.clamp(
+    (targetSimulationTime - simulationTime) / FIXED_STEP_MS,
+    0,
+    1,
+  );
+  lens.renderPosition.lerpVectors(
+    lens.previousPosition,
+    lens.position,
+    interpolation,
+  );
+  lens.renderMotion.lerpVectors(lens.previousMotion, lens.motion, interpolation);
+  lens.renderAcceleration.lerpVectors(
+    lens.previousAcceleration,
+    lens.acceleration,
+    interpolation,
+  );
+  lens.renderRadius = THREE.MathUtils.lerp(
+    lens.previousRadius,
+    lens.radius,
+    interpolation,
+  );
+  const renderRoll = THREE.MathUtils.lerp(
+    lens.previousRoll,
+    lens.roll,
+    interpolation,
+  );
+  const renderWobble = THREE.MathUtils.lerp(
+    lens.previousWobbleEnergy,
+    lens.wobbleEnergy,
+    interpolation,
+  );
+
   const aspect = innerWidth / innerHeight;
-  glassOrb.position.x = (lens.position.x / innerWidth * 2 - 1) * aspect;
-  glassOrb.position.y = 1 - lens.position.y / innerHeight * 2;
-  const worldRadius = lens.radius / innerHeight * 2;
+  glassOrb.position.x = (lens.renderPosition.x / innerWidth * 2 - 1) * aspect;
+  glassOrb.position.y = 1 - lens.renderPosition.y / innerHeight * 2;
+  const worldRadius = lens.renderRadius / innerHeight * 2;
   glassOrb.scale.setScalar(worldRadius);
-  liquidNormalMap.offset.x += 0.00018;
-  liquidNormalMap.offset.y -= 0.00011;
-  deformation.velocity.value.copy(lens.motion);
-  deformation.acceleration.value.copy(lens.acceleration);
-  deformation.speed.value = THREE.MathUtils.clamp(lens.motion.length(), 0, 1);
-  deformation.wobble.value = lens.wobbleEnergy;
+  liquidNormalMap.offset.x += 0.0108 * frameSeconds;
+  liquidNormalMap.offset.y -= 0.0066 * frameSeconds;
+  deformation.velocity.value.copy(lens.renderMotion);
+  deformation.acceleration.value.copy(lens.renderAcceleration);
+  deformation.speed.value = THREE.MathUtils.clamp(lens.renderMotion.length(), 0, 1);
+  deformation.wobble.value = renderWobble;
   deformation.time.value = now * 0.001;
+  uniforms.uRoll.value = renderRoll;
 
   renderer.render(scene, camera);
   requestAnimationFrame(render);

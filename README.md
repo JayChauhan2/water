@@ -26,4 +26,10 @@ point light. A flowing normal map
 rotates with pointer movement. Pointer speed, direction, and acceleration
 deform the sphere's vertices and optical normals, exciting damped surface-wave
 modes after movement stops. Pressing smoothly expands the geometry and
-releasing contracts it. Built with Vite, Three.js, and Canvas 2D.
+releasing contracts it.
+
+Pointer input is buffered from coalesced browser samples, reconstructed with a
+small interpolation window, and converted to velocity and acceleration through
+One Euro filters. Bubble physics runs at a fixed 120 Hz and is interpolated for
+rendering, while the transmissive buffer uses an optimized resolution scale.
+Built with Vite, Three.js, and Canvas 2D.
