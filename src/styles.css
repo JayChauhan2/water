@@ -60,8 +60,7 @@ a {
   grid-template-columns: 1fr auto 1fr;
   align-items: start;
   pointer-events: none;
-  mix-blend-mode: difference;
-  color: #fff;
+  color: transparent;
 }
 
 .chrome > * {
@@ -111,8 +110,14 @@ a {
   z-index: 10;
   margin: 0;
   pointer-events: none;
-  mix-blend-mode: difference;
-  color: #fff;
+  color: transparent;
+}
+
+.chrome a:focus-visible,
+.chrome button:focus-visible {
+  outline: 1px solid #111;
+  outline-offset: 0.35rem;
+  color: #111;
 }
 
 .instruction {

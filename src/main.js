@@ -394,6 +394,37 @@ function drawArt() {
   c.fillStyle = palette.paper;
   c.fillRect(0, 0, width, height);
 
+  // Render interface labels into the same texture as the exhibition so the
+  // physical glass sphere refracts every visible element, including corners.
+  const pixelRatio = renderer.getPixelRatio();
+  const cssWidth = width / pixelRatio;
+  const edge = THREE.MathUtils.clamp(cssWidth * 0.02, 16, 32) * pixelRatio;
+  const chromeSize =
+    THREE.MathUtils.clamp(cssWidth * 0.007, 9.28, 10.88) * pixelRatio;
+
+  c.save();
+  c.fillStyle = palette.ink;
+  c.font = font(chromeSize, "DM Mono", "", 400);
+  c.textBaseline = "top";
+
+  c.textAlign = "left";
+  c.fillText("SOFT", edge, edge);
+  c.fillText("FOCUS", edge, edge + chromeSize * 1.08);
+
+  c.textAlign = "center";
+  c.fillText("DIGITAL EXHIBITION · 07", width * 0.5, edge);
+
+  c.textAlign = "right";
+  c.fillText("ABOUT", width - edge, edge);
+
+  c.textAlign = "left";
+  c.textBaseline = "bottom";
+  c.fillText("MOVE THE GLASS · LOOK CLOSER", edge, height - edge);
+
+  c.textAlign = "right";
+  c.fillText("01 / 24", width - edge, height - edge);
+  c.restore();
+
   c.fillStyle = palette.yellow;
   c.beginPath();
   c.arc(width * 0.83, height * 0.22, unit * 0.108, 0, Math.PI * 2);
