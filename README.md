@@ -39,4 +39,8 @@ an irregular refractive pool. The residue has surface-normal refraction,
 spectral edges, center-relative lighting, surface-tension diffusion, gravity
 drift, and slow evaporation.
 
+The only interface control is a refracted `Clear` button. Hovering it expands
+the orb; activating it sends a physically lit 3D metal-and-rubber squeegee
+across the scene, clearing the residue progressively behind its blade.
+
 Built with Vite, Three.js, and Canvas 2D.

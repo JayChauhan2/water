@@ -443,6 +443,71 @@ const centerLight = new THREE.PointLight(0xffffff, 30, 20, 1.8);
 centerLight.position.set(0, 0, 3.2);
 scene.add(centerLight);
 
+const wiperGroup = new THREE.Group();
+const rubberMaterial = new THREE.MeshStandardMaterial({
+  color: 0x17232a,
+  roughness: 0.72,
+  metalness: 0.04,
+});
+const metalMaterial = new THREE.MeshPhysicalMaterial({
+  color: 0xd9e2e4,
+  roughness: 0.19,
+  metalness: 0.88,
+  clearcoat: 0.75,
+  clearcoatRoughness: 0.12,
+  envMapIntensity: 1.15,
+});
+const gripMaterial = new THREE.MeshPhysicalMaterial({
+  color: 0x287fa0,
+  roughness: 0.32,
+  metalness: 0.08,
+  clearcoat: 0.65,
+  clearcoatRoughness: 0.18,
+});
+
+const wiperRubber = new THREE.Mesh(
+  new THREE.BoxGeometry(0.032, 2.36, 0.065, 1, 18, 1),
+  rubberMaterial,
+);
+wiperRubber.position.set(-0.055, 0, -0.015);
+wiperGroup.add(wiperRubber);
+
+const wiperRail = new THREE.Mesh(
+  new THREE.BoxGeometry(0.075, 2.24, 0.09, 1, 16, 1),
+  metalMaterial,
+);
+wiperRail.position.z = 0.025;
+wiperGroup.add(wiperRail);
+
+const wiperConnector = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.12, 0.12, 0.16, 32),
+  metalMaterial,
+);
+wiperConnector.rotation.x = Math.PI / 2;
+wiperConnector.position.set(0.06, 0.05, 0.13);
+wiperGroup.add(wiperConnector);
+
+const wiperHandle = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.072, 0.092, 0.78, 32),
+  gripMaterial,
+);
+wiperHandle.rotation.z = -1.03;
+wiperHandle.rotation.x = 0.18;
+wiperHandle.position.set(0.35, 0.24, 0.19);
+wiperGroup.add(wiperHandle);
+
+const handleCap = new THREE.Mesh(
+  new THREE.SphereGeometry(0.075, 24, 16),
+  gripMaterial,
+);
+handleCap.position.set(0.68, 0.44, 0.25);
+wiperGroup.add(handleCap);
+
+wiperGroup.position.z = 1.1;
+wiperGroup.rotation.y = -0.16;
+wiperGroup.visible = false;
+scene.add(wiperGroup);
+
 const palette = {
   ink: "#111111",
   red: "#ff3b30",
@@ -492,22 +557,8 @@ function drawArt() {
   c.font = font(chromeSize, "DM Mono", "", 400);
   c.textBaseline = "top";
 
-  c.textAlign = "left";
-  c.fillText("SOFT", edge, edge);
-  c.fillText("FOCUS", edge, edge + chromeSize * 1.08);
-
-  c.textAlign = "center";
-  c.fillText("DIGITAL EXHIBITION · 07", width * 0.5, edge);
-
   c.textAlign = "right";
-  c.fillText("ABOUT", width - edge, edge);
-
-  c.textAlign = "left";
-  c.textBaseline = "bottom";
-  c.fillText("MOVE THE GLASS · LOOK CLOSER", edge, height - edge);
-
-  c.textAlign = "right";
-  c.fillText("01 / 24", width - edge, height - edge);
+  c.fillText("CLEAR", width - edge, edge);
   c.restore();
 
   c.fillStyle = palette.yellow;
@@ -554,16 +605,10 @@ function drawArt() {
   c.fillStyle = palette.ink;
   c.font = font(unit * 0.018, "DM Mono", "", 400);
   c.fillText("OBJECTS / IDEAS / ACCIDENTS", width * 0.69, height * 0.325);
-  c.fillText("OPEN DAILY", width * 0.04, height * 0.91);
-  c.fillText("10:00—∞", width * 0.04, height * 0.94);
 
   c.fillStyle = palette.pink;
   c.font = font(unit * 0.042, "Bodoni Moda", "italic", 600);
   c.fillText("stay curious", width * 0.69, height * 0.64);
-
-  c.fillStyle = palette.red;
-  c.font = font(unit * 0.026, "DM Mono", "", 400);
-  c.fillText("NO. 07", width * 0.88, height * 0.94);
 
   c.save();
   c.translate(width * 0.53, height * 0.88);
@@ -700,6 +745,7 @@ const lens = {
   renderRadius: 80,
   radiusVelocity: 0,
   held: false,
+  hoveringClear: false,
   pressedUntil: 0,
 };
 
@@ -708,6 +754,12 @@ const residue = {
   timeSinceDeposit: 0,
   lastFlowTime: initialTime,
   dirty: false,
+};
+const wiper = {
+  active: false,
+  startedAt: 0,
+  duration: 2400,
+  clearedPixel: 0,
 };
 const depositDirection = new THREE.Vector2();
 const depositPerpendicular = new THREE.Vector2();
@@ -731,6 +783,7 @@ function stampWater(position, radiusCss, opacity, offsetX = 0, offsetY = 0) {
 }
 
 function depositWater(deltaSeconds) {
+  if (wiper.active) return;
   const speed = lens.motion.length();
   residue.timeSinceDeposit += deltaSeconds;
 
@@ -798,6 +851,62 @@ function flowAndEvaporateResidue(now) {
   residueContext.fillStyle = `rgba(0, 0, 0, ${Math.min(elapsed * 0.018, 0.01)})`;
   residueContext.fillRect(0, 0, residueCanvas.width, residueCanvas.height);
   residue.dirty = true;
+}
+
+function startWipe() {
+  if (wiper.active) return;
+  wiper.active = true;
+  wiper.startedAt = performance.now();
+  wiper.clearedPixel = 0;
+  wiperGroup.visible = true;
+}
+
+function updateWiper(now) {
+  if (!wiper.active) return;
+
+  const progress = THREE.MathUtils.clamp(
+    (now - wiper.startedAt) / wiper.duration,
+    0,
+    1,
+  );
+  const eased = progress * progress * (3 - 2 * progress);
+  const aspect = innerWidth / innerHeight;
+  const startX = -aspect - 0.26;
+  const endX = aspect + 0.82;
+  wiperGroup.position.x = THREE.MathUtils.lerp(startX, endX, eased);
+  wiperGroup.position.y = Math.sin(progress * Math.PI) * 0.025;
+  wiperGroup.rotation.y = -0.16 + Math.sin(progress * Math.PI) * 0.10;
+  wiperGroup.rotation.z = Math.sin(progress * Math.PI * 2) * 0.012;
+
+  const bladeProgress = THREE.MathUtils.clamp(
+    (wiperGroup.position.x + aspect) / (aspect * 2),
+    0,
+    1,
+  );
+  const clearUntil = Math.floor(bladeProgress * residueCanvas.width);
+  if (clearUntil > wiper.clearedPixel) {
+    residueContext.fillStyle = "#000";
+    residueContext.fillRect(
+      Math.max(0, wiper.clearedPixel - 2),
+      0,
+      clearUntil - wiper.clearedPixel + 4,
+      residueCanvas.height,
+    );
+    wiper.clearedPixel = clearUntil;
+    residue.dirty = true;
+  }
+
+  if (progress >= 1) {
+    residueContext.fillStyle = "#000";
+    residueContext.fillRect(0, 0, residueCanvas.width, residueCanvas.height);
+    residueBufferContext.fillStyle = "#000";
+    residueBufferContext.fillRect(0, 0, residueBuffer.width, residueBuffer.height);
+    residue.dirty = true;
+    residue.dwellTime = 0;
+    residue.timeSinceDeposit = 0;
+    wiper.active = false;
+    wiperGroup.visible = false;
+  }
 }
 
 let simulationTime = initialTime - INPUT_DELAY_MS;
@@ -917,7 +1026,8 @@ function updatePhysics(stepTime) {
   lens.wobbleEnergy *= Math.exp(-deltaSeconds * 1.15);
   depositWater(deltaSeconds);
 
-  const expanded = lens.held || stepTime < lens.pressedUntil;
+  const expanded =
+    lens.held || lens.hoveringClear || stepTime < lens.pressedUntil;
   const radiusTarget = expanded ? expandedRadius : restingRadius;
   const angularFrequency = 13;
   const dampingRatio = 0.82;
@@ -933,6 +1043,7 @@ function render() {
   const frameSeconds = Math.min((now - lastRenderTime) / 1000, 0.05);
   lastRenderTime = now;
   flowAndEvaporateResidue(now);
+  updateWiper(now);
   const targetSimulationTime = now - INPUT_DELAY_MS;
   let updates = 0;
 
@@ -1006,18 +1117,17 @@ function render() {
 render();
 document.documentElement.classList.add("is-ready");
 
-const aboutPanel = document.querySelector(".about-panel");
-const aboutOpen = document.querySelector(".about-button");
-const aboutClose = document.querySelector(".about-close");
-
-function setAbout(open) {
-  aboutPanel.classList.toggle("is-open", open);
-  aboutPanel.setAttribute("aria-hidden", String(!open));
-  open ? aboutClose.focus() : aboutOpen.focus();
-}
-
-aboutOpen.addEventListener("click", () => setAbout(true));
-aboutClose.addEventListener("click", () => setAbout(false));
-addEventListener("keydown", (event) => {
-  if (event.key === "Escape") setAbout(false);
+const clearButton = document.querySelector(".clear-button");
+clearButton.addEventListener("pointerenter", () => {
+  lens.hoveringClear = true;
 });
+clearButton.addEventListener("pointerleave", () => {
+  lens.hoveringClear = false;
+});
+clearButton.addEventListener("focus", () => {
+  lens.hoveringClear = true;
+});
+clearButton.addEventListener("blur", () => {
+  lens.hoveringClear = false;
+});
+clearButton.addEventListener("click", startWipe);
