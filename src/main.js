@@ -503,9 +503,8 @@ const handleCap = new THREE.Mesh(
 handleCap.position.set(0.68, 0.44, 0.25);
 wiperGroup.add(handleCap);
 
-wiperGroup.position.z = 1.1;
+wiperGroup.position.set(-100, 0, 1.1);
 wiperGroup.rotation.y = -0.16;
-wiperGroup.visible = false;
 scene.add(wiperGroup);
 
 const palette = {
@@ -855,10 +854,12 @@ function flowAndEvaporateResidue(now) {
 
 function startWipe() {
   if (wiper.active) return;
+  const aspect = innerWidth / innerHeight;
+  wiperGroup.position.set(-aspect - 1.05, 0, 1.1);
+  wiperGroup.rotation.set(0, -0.16, 0);
   wiper.active = true;
   wiper.startedAt = performance.now();
   wiper.clearedPixel = 0;
-  wiperGroup.visible = true;
 }
 
 function setFilmHeight(data, index, height) {
@@ -987,7 +988,9 @@ function updateWiper(now) {
   );
   const eased = progress * progress * (3 - 2 * progress);
   const aspect = innerWidth / innerHeight;
-  const startX = -aspect - 0.26;
+  // The handle extends far to the right of the blade, so the whole assembly
+  // begins beyond the viewport and enters through the edge under its own motion.
+  const startX = -aspect - 1.05;
   const endX = aspect + 0.82;
   wiperGroup.position.x = THREE.MathUtils.lerp(startX, endX, eased);
   wiperGroup.position.y = Math.sin(progress * Math.PI) * 0.025;
@@ -1017,7 +1020,6 @@ function updateWiper(now) {
     residue.dwellTime = 0;
     residue.timeSinceDeposit = 0;
     wiper.active = false;
-    wiperGroup.visible = false;
   }
 }
 
