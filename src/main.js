@@ -861,6 +861,122 @@ function startWipe() {
   wiperGroup.visible = true;
 }
 
+function setFilmHeight(data, index, height) {
+  const value = Math.round(THREE.MathUtils.clamp(height, 0, 1) * 255);
+  data[index] = value;
+  data[index + 1] = value;
+  data[index + 2] = value;
+  data[index + 3] = 255;
+}
+
+function wipeResidueSegment(fromPixel, toPixel, bladeSpeed) {
+  const fieldWidth = residueCanvas.width;
+  const fieldHeight = residueCanvas.height;
+  const firstSwept = Math.max(0, Math.floor(fromPixel));
+  const lastSwept = Math.min(fieldWidth - 1, Math.ceil(toPixel));
+  if (lastSwept < firstSwept) return;
+
+  const smearLength = 14;
+  const leadingWidth = 5;
+  const regionStart = Math.max(0, firstSwept - smearLength);
+  const regionEnd = Math.min(fieldWidth, lastSwept + leadingWidth + 1);
+  const regionWidth = regionEnd - regionStart;
+  const image = residueContext.getImageData(
+    regionStart,
+    0,
+    regionWidth,
+    fieldHeight,
+  );
+  const data = image.data;
+
+  const localIndex = (x, y) => (y * regionWidth + (x - regionStart)) * 4;
+  const addHeight = (x, y, amount) => {
+    if (x < regionStart || x >= regionEnd || amount <= 0) return;
+    const index = localIndex(x, y);
+    setFilmHeight(data, index, data[index] / 255 + amount);
+  };
+
+  for (let y = 0; y < fieldHeight; y++) {
+    // Fixed blade imperfections produce repeatable streak channels rather
+    // than random transparency. The slower spatial waves represent pressure
+    // variation; narrow defects represent tiny gaps in the rubber edge.
+    const pressureWave =
+      Math.sin(y * 0.113 + 0.8) * 0.08 +
+      Math.sin(y * 0.037 + 2.2) * 0.065;
+    const narrowDefect = Math.pow(
+      Math.max(0, Math.sin(y * 0.271 + Math.sin(y * 0.041) * 1.7)),
+      12,
+    );
+    const contactPressure = THREE.MathUtils.clamp(
+      0.86 + pressureWave - narrowDefect * 0.34,
+      0.42,
+      0.98,
+    );
+    let leadingMass = 0;
+
+    for (let x = firstSwept; x <= lastSwept; x++) {
+      const index = localIndex(x, y);
+      const height = data[index] / 255;
+      if (height < 0.001) continue;
+
+      const overload = THREE.MathUtils.smoothstep(height, 0.18, 0.78);
+      const chatter = 0.94 + Math.sin(x * 0.42 + y * 0.017) * 0.06;
+      const effectivePressure = contactPressure * chatter;
+
+      // The entrained post-wipe film follows the capillary-number trend:
+      // faster blade motion and weaker contact retain a thicker lubricating film.
+      const speedFilm =
+        0.012 +
+        0.034 *
+          Math.pow(Math.max(bladeSpeed, 0.04), 2 / 3) *
+          (1.08 - effectivePressure);
+      const retention =
+        0.045 +
+        (1 - effectivePressure) * 0.34 +
+        overload * 0.19;
+      const retainedHeight = Math.min(
+        height,
+        height * retention + speedFilm * Math.min(height * 7, 1),
+      );
+      const displaced = Math.max(0, height - retainedHeight);
+
+      const smearFraction = THREE.MathUtils.clamp(
+        (1 - effectivePressure) * 0.42 + narrowDefect * 0.30 + overload * 0.08,
+        0.04,
+        0.42,
+      );
+      const smearMass = displaced * smearFraction;
+      // Twelve percent drains off the screen-facing blade; the rest is
+      // conserved between the trailing film and the transported ridge.
+      const leadingFraction = 0.88 - smearFraction;
+      leadingMass += displaced * leadingFraction;
+      setFilmHeight(data, index, retainedHeight);
+
+      // Viscocapillary drag lays displaced water back down as a tapered film.
+      // Blade defects concentrate that film into persistent horizontal streaks.
+      let weightTotal = 0;
+      for (let distance = 1; distance <= smearLength; distance++) {
+        weightTotal += Math.exp(-distance / (4.5 + overload * 4));
+      }
+      for (let distance = 1; distance <= smearLength; distance++) {
+        const weight =
+          Math.exp(-distance / (4.5 + overload * 4)) / weightTotal;
+        addHeight(x - distance, y, smearMass * weight);
+      }
+    }
+
+    // Water that is not left as film piles up against the leading blade edge.
+    // The ridge is transported by the next simulation step and exits at screen right.
+    for (let offset = 1; offset <= leadingWidth; offset++) {
+      const ridgeWeight = (leadingWidth + 1 - offset) / 15;
+      addHeight(lastSwept + offset, y, leadingMass * ridgeWeight);
+    }
+  }
+
+  residueContext.putImageData(image, regionStart, 0);
+  residue.dirty = true;
+}
+
 function updateWiper(now) {
   if (!wiper.active) return;
 
@@ -885,23 +1001,19 @@ function updateWiper(now) {
   );
   const clearUntil = Math.floor(bladeProgress * residueCanvas.width);
   if (clearUntil > wiper.clearedPixel) {
-    residueContext.fillStyle = "#000";
-    residueContext.fillRect(
-      Math.max(0, wiper.clearedPixel - 2),
-      0,
-      clearUntil - wiper.clearedPixel + 4,
-      residueCanvas.height,
+    const normalizedBladeSpeed = Math.max(
+      0.04,
+      6 * progress * (1 - progress),
+    );
+    wipeResidueSegment(
+      wiper.clearedPixel,
+      clearUntil,
+      normalizedBladeSpeed,
     );
     wiper.clearedPixel = clearUntil;
-    residue.dirty = true;
   }
 
   if (progress >= 1) {
-    residueContext.fillStyle = "#000";
-    residueContext.fillRect(0, 0, residueCanvas.width, residueCanvas.height);
-    residueBufferContext.fillStyle = "#000";
-    residueBufferContext.fillRect(0, 0, residueBuffer.width, residueBuffer.height);
-    residue.dirty = true;
     residue.dwellTime = 0;
     residue.timeSinceDeposit = 0;
     wiper.active = false;

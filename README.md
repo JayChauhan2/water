@@ -41,6 +41,11 @@ drift, and slow evaporation.
 
 The only interface control is a refracted `Clear` button. Hovering it expands
 the orb; activating it sends a physically lit 3D metal-and-rubber squeegee
-across the scene, clearing the residue progressively behind its blade.
+across the scene. The blade applies a nonuniform contact-pressure profile to
+the water height field: it entrains a thin lubricating film, transports pooled
+water along its leading edge, and drags water through small blade defects into
+tapered streaks. Heavy water can partially hydroplane beneath the rubber.
+Successive passes operate on the remaining film, so each wipe is clearer
+without turning the effect into an opacity fade or an instant erase.
 
 Built with Vite, Three.js, and Canvas 2D.
