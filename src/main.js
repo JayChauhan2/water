@@ -609,18 +609,6 @@ function drawArt() {
   c.font = font(unit * 0.042, "Bodoni Moda", "italic", 600);
   c.fillText("stay curious", width * 0.69, height * 0.64);
 
-  c.save();
-  c.translate(width * 0.53, height * 0.88);
-  c.rotate(-0.08);
-  c.fillStyle = palette.yellow;
-  c.fillRect(-unit * 0.13, -unit * 0.036, unit * 0.26, unit * 0.072);
-  c.fillStyle = palette.ink;
-  c.font = font(unit * 0.025, "DM Mono", "", 400);
-  c.textAlign = "center";
-  c.textBaseline = "middle";
-  c.fillText("MOVE SLOWLY", 0, 0);
-  c.restore();
-
   artTexture.needsUpdate = true;
 }
 
